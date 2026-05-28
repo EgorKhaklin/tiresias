@@ -65,3 +65,12 @@ class RegistryClient:
 
     def share_bundle(self, bundle_id: str) -> dict:
         return self._req("POST", f"/api/bundles/{bundle_id}/share")
+
+    def list_keys(self) -> list[dict]:
+        return self._req("GET", "/api/keys")["keys"]
+
+    def revoke_key(self, key_id: str) -> dict:
+        return self._req("DELETE", f"/api/keys/{key_id}")
+
+    def stats(self) -> dict:
+        return self._req("GET", "/api/stats")

@@ -154,6 +154,23 @@ def cmd_share(args) -> int:
     return 0
 
 
+def cmd_keys(args) -> int:
+    keys = _client(args).list_keys()
+    if not keys:
+        print("no keys")
+        return 0
+    for k in keys:
+        state = "revoked" if k["revoked"] else "active"
+        print(f"  {k['key_id']}  [{state}]  {k.get('label') or ''}")
+    return 0
+
+
+def cmd_revoke_key(args) -> int:
+    r = _client(args).revoke_key(args.key_id)
+    print(f"revoked {args.key_id}" if r.get("revoked") else "not revoked")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="gpi", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -218,6 +235,17 @@ def build_parser() -> argparse.ArgumentParser:
     sh.add_argument("--registry", help=f"default {config.REGISTRY_URL}")
     sh.add_argument("--key", help="API key (or set GPI_API_KEY)")
     sh.set_defaults(func=cmd_share)
+
+    ks = sub.add_parser("keys", help="list this org's API keys (metadata only)")
+    ks.add_argument("--registry", help=f"default {config.REGISTRY_URL}")
+    ks.add_argument("--key", help="API key (or set GPI_API_KEY)")
+    ks.set_defaults(func=cmd_keys)
+
+    rk = sub.add_parser("revoke-key", help="revoke one of this org's API keys")
+    rk.add_argument("key_id")
+    rk.add_argument("--registry", help=f"default {config.REGISTRY_URL}")
+    rk.add_argument("--key", help="API key (or set GPI_API_KEY)")
+    rk.set_defaults(func=cmd_revoke_key)
     return p
 
 

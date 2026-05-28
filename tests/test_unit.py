@@ -311,6 +311,16 @@ class TestRegistryHandle(unittest.TestCase):
         with self.assertRaises(ApiError):
             self.server.handle("POST", "/api/bundles", self.org, self._bundle_dict())
 
+    def test_self_service_keys(self):
+        self.server.STORE.issue_key(self.org, "laptop")
+        _, listed = self.server.handle("GET", "/api/keys", self.org, {})
+        self.assertEqual(len(listed["keys"]), 1)
+        kid = listed["keys"][0]["key_id"]
+        _, rev = self.server.handle("DELETE", f"/api/keys/{kid}", self.org, {})
+        self.assertTrue(rev["revoked"])
+        _, again = self.server.handle("GET", "/api/keys", self.org, {})
+        self.assertTrue(again["keys"][0]["revoked"])
+
 
 class TestAdmin(unittest.TestCase):
     def setUp(self):
