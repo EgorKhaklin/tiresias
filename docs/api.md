@@ -30,6 +30,7 @@ Limits: per-key rate limit (`GPI_RATE_PER_MIN`, default 240/min → `429`), max 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/healthz` | none | liveness |
+| GET | `/metrics` | admin | Prometheus-format instance gauges (orgs/datasets/bundles/verified/shares) |
 | GET | `/api/whoami` | key | the calling org |
 | GET | `/api/stats` | key | dataset / bundle / verified counts |
 | POST | `/api/manifests` | key | register a dataset manifest |

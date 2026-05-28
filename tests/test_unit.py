@@ -389,6 +389,24 @@ class TestHardening(unittest.TestCase):
         finally:
             store.close()
 
+    def test_global_stats_and_metrics(self):
+        from gpi.registry import server
+
+        tmp = tempfile.mkdtemp()
+        server.STORE = Store(os.path.join(tmp, "r.db"))
+        try:
+            org = server.STORE.create_org("Acme")
+            server.STORE.put_manifest(org, {"dataset_id": "ds0", "commitment": 1,
+                                            "gamma": 1, "schema": [], "name": "d"})
+            gs = server.STORE.global_stats()
+            self.assertEqual(gs["orgs"], 1)
+            self.assertEqual(gs["datasets"], 1)
+            text = server.metrics_text()
+            self.assertIn("# TYPE gpi_datasets gauge", text)
+            self.assertIn("gpi_datasets 1", text)
+        finally:
+            server.STORE.close()
+
     def test_handle_pagination_query(self):
         from gpi.registry import server
 

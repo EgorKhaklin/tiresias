@@ -76,6 +76,18 @@ class RateLimiter:
 RL = RateLimiter(config.RATE_PER_MIN)
 
 
+def metrics_text() -> str:
+    """Prometheus text-format exposition of instance-wide gauges."""
+    s = STORE.global_stats()
+    lines = []
+    for key, val in s.items():
+        name = f"gpi_{key}"
+        lines.append(f"# HELP {name} Instance-wide count of {key}.")
+        lines.append(f"# TYPE {name} gauge")
+        lines.append(f"{name} {val}")
+    return "\n".join(lines) + "\n"
+
+
 def _page(query: dict) -> tuple[int, int]:
     try:
         limit = min(int(query.get("limit", config.PAGE_SIZE)), config.MAX_PAGE_SIZE)
@@ -329,6 +341,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/healthz":
             self._json(200, {"status": "ok", "service": "gpi-registry"})
+            return
+        if path == "/metrics":
+            if not auth.admin_token_ok(self._bearer(), config.ADMIN_TOKEN):
+                self._json(401, {"error": "admin token required for /metrics"})
+                return
+            self._send(200, metrics_text().encode(), "text/plain; version=0.0.4")
             return
         # public, no-auth verification views (a share token authorizes one bundle)
         if _SHARE_VIEW.match(path):

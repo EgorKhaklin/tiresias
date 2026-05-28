@@ -271,6 +271,20 @@ class Store:
             "last_activity": last,
         }
 
+    def global_stats(self) -> dict:
+        """Instance-wide counts (all tenants) for ops/metrics."""
+        with self._lock:
+            c = self._db.execute
+            return {
+                "orgs": c("SELECT COUNT(*) n FROM orgs").fetchone()["n"],
+                "datasets": c("SELECT COUNT(*) n FROM manifests").fetchone()["n"],
+                "bundles": c("SELECT COUNT(*) n FROM bundles").fetchone()["n"],
+                "bundles_verified": c(
+                    "SELECT COUNT(*) n FROM bundles WHERE verified=1"
+                ).fetchone()["n"],
+                "shares": c("SELECT COUNT(*) n FROM shares").fetchone()["n"],
+            }
+
     def close(self) -> None:
         with self._lock:
             self._db.close()
