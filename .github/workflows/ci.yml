@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (pure stdlib, no deps)
+        run: pip install -e .
+      - name: Unit tests
+        # The engine roundtrip test self-skips when the Glass engine isn't
+        # present, so the fast suite runs cleanly in CI without it.
+        run: python -m unittest tests.test_unit -v

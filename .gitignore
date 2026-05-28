@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.gpi/
+*.db
+*.manifest.json
+*.bundle.json
+.playwright-mcp/
+gpi-*.png
+.venv/
+venv/
+.DS_Store

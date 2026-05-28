@@ -1,0 +1,9 @@
+dept,level,salary,remote
+eng,5,185000,true
+eng,4,150000,false
+sales,3,120000,true
+sales,4,140000,false
+ops,2,95000,true
+eng,6,210000,false
+sales,2,90000,true
+ops,3,110000,false
