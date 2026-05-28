@@ -12,7 +12,7 @@ import json
 import time
 from dataclasses import asdict, dataclass
 
-ENGINE_VERSION = "gpi-0.0.1 / glass-pane"
+ENGINE_VERSION = "gpi-0.1.0 / glass-pane"
 CRYPTO_GRADE = "educational"
 
 

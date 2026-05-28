@@ -154,6 +154,31 @@ def cmd_share(args) -> int:
     return 0
 
 
+def cmd_status(args) -> int:
+    import urllib.error
+    import urllib.request
+
+    base = (args.registry or config.REGISTRY_URL).rstrip("/")
+    try:
+        with urllib.request.urlopen(base + "/healthz", timeout=10) as r:
+            up = r.status == 200
+    except (urllib.error.URLError, OSError):
+        up = False
+    print(f"registry {base}: {'up' if up else 'unreachable'}")
+    if not up:
+        return 1
+    if args.key or config.API_KEY:
+        client = _client(args)
+        who = client.whoami()
+        s = client.stats()
+        print(f"  org      : {who.get('org_name')} ({who.get('org_id')})")
+        print(f"  datasets : {s.get('datasets')}")
+        print(f"  bundles  : {s.get('bundles')} ({s.get('verified_bundles')} verified)")
+    else:
+        print("  (set --key or GPI_API_KEY to see your org's stats)")
+    return 0
+
+
 def cmd_keys(args) -> int:
     keys = _client(args).list_keys()
     if not keys:
@@ -172,7 +197,10 @@ def cmd_revoke_key(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    from gpi import __version__
+
     p = argparse.ArgumentParser(prog="gpi", description=__doc__)
+    p.add_argument("--version", action="version", version=f"gpi {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     c = sub.add_parser("commit", help="commit a dataset -> public manifest")
@@ -235,6 +263,11 @@ def build_parser() -> argparse.ArgumentParser:
     sh.add_argument("--registry", help=f"default {config.REGISTRY_URL}")
     sh.add_argument("--key", help="API key (or set GPI_API_KEY)")
     sh.set_defaults(func=cmd_share)
+
+    stt = sub.add_parser("status", help="check the registry and show your org's stats")
+    stt.add_argument("--registry", help=f"default {config.REGISTRY_URL}")
+    stt.add_argument("--key", help="API key (or set GPI_API_KEY)")
+    stt.set_defaults(func=cmd_status)
 
     ks = sub.add_parser("keys", help="list this org's API keys (metadata only)")
     ks.add_argument("--registry", help=f"default {config.REGISTRY_URL}")

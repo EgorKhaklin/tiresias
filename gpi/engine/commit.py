@@ -17,7 +17,7 @@ import csv
 from gpi.engine.adapter import commit_table
 from gpi.engine.schema import Column, ColType, Dataset
 
-ENGINE_VERSION = "gpi-0.0.1 / glass-pane"
+ENGINE_VERSION = "gpi-0.1.0 / glass-pane"
 CRYPTO_GRADE = "educational"  # per Glass docs/soundness.md — not production crypto
 
 

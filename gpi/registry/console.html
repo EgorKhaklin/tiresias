@@ -79,6 +79,7 @@
   <div class="conn">
     <span class="dot" id="dot"></span>
     <span id="connText" class="muted">not connected</span>
+    <button class="ghost tiny" id="btnRefresh" style="display:none">refresh</button>
     <button class="ghost tiny" id="btnDisconnect" style="display:none">disconnect</button>
   </div>
 </header>
@@ -101,7 +102,7 @@
 
     <div class="panel">
       <h2>Datasets</h2>
-      <table><thead><tr><th>dataset</th><th>commitment</th><th>rows</th><th>crypto</th></tr></thead>
+      <table><thead><tr><th>dataset</th><th>commitment</th><th>rows</th><th>crypto</th><th>integrate</th></tr></thead>
       <tbody id="datasets"></tbody></table>
     </div>
 
@@ -150,6 +151,7 @@ function setConnected(on, who){
   document.getElementById("dot").className="dot"+(on?" on":"");
   document.getElementById("connText").textContent = on?`${who.org_name} · ${who.org_id}`:"not connected";
   document.getElementById("btnDisconnect").style.display = on?"inline-block":"none";
+  document.getElementById("btnRefresh").style.display = on?"inline-block":"none";
   document.getElementById("connectCard").style.display = on?"none":"block";
   document.getElementById("app").style.display = on?"block":"none";
 }
@@ -164,11 +166,14 @@ async function refresh(){
   document.getElementById("sVerified").textContent=s.verified_bundles;
 
   const ms=(await api("/api/manifests")).manifests;
-  document.getElementById("datasets").innerHTML = ms.length ? ms.map(m=>
-    `<tr><td>${esc(m.name||'')} <span class="muted mono">${esc(m.dataset_id)}</span>${copyBtn(m.dataset_id)}</td>
+  document.getElementById("datasets").innerHTML = ms.length ? ms.map(m=>{
+    const snippet = `gpi remote-query ${m.dataset_id} "SELECT COUNT(*)" --data <your.csv>`;
+    return `<tr><td>${esc(m.name||'')} <span class="muted mono">${esc(m.dataset_id)}</span>${copyBtn(m.dataset_id)}</td>
      <td class="mono">${m.commitment}${copyBtn(m.commitment)}</td><td>${m.row_count}</td>
-     <td>${pill(false,esc(m.crypto_grade),'dim')}</td></tr>`).join("")
-    : `<tr><td colspan=4 class="empty">No datasets yet — run <span class="mono">gpi remote-commit</span>.</td></tr>`;
+     <td>${pill(false,esc(m.crypto_grade),'dim')}</td>
+     <td><button class="copy" title="copy a query command" onclick='copy(${JSON.stringify(snippet)})'>⧉ query</button></td></tr>`;
+    }).join("")
+    : `<tr><td colspan=5 class="empty">No datasets yet — run <span class="mono">gpi remote-commit</span>.</td></tr>`;
 
   const bs=(await api("/api/bundles")).bundles;
   document.getElementById("bundles").innerHTML = bs.length ? bs.map(b=>
@@ -220,6 +225,7 @@ function disconnect(){ KEY=""; localStorage.removeItem("gpi_key"); setConnected(
 document.getElementById("btnConnect").onclick=connect;
 document.getElementById("key").addEventListener("keydown",e=>{ if(e.key==="Enter") connect(); });
 document.getElementById("btnDisconnect").onclick=disconnect;
+document.getElementById("btnRefresh").onclick=()=>refresh().catch(e=>toast(e.message,true));
 if(KEY){ document.getElementById("key").value=KEY; refresh().catch(()=>setConnected(false)); }
 </script>
 </body>
