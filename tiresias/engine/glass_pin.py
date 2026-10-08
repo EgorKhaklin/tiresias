@@ -29,7 +29,7 @@ GLASS_TAG = "v1.0.0"
 
 # The files Tiresias reads from Glass, and their SHA-256 at GLASS_TAG.
 PINNED_FILES = {
-    "glass.py": "29270010b41a97f1043e084bf031a9d1ac88b98f7d83ae658332b2eccb9ff733",
+    "glass.py": "90409180570fb86bf6a7bd4ab7b4cad714a00cbe0fd68d2999f0bf79b42208cc",
     "examples/prove/prove_pane.glass": "54e066510b3d98d7ab7685863a769fe7b086b7b18688d740d0cae8174cda8094",
 }
 

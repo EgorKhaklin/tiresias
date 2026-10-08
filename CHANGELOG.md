@@ -8,7 +8,7 @@ Entries use the [Keep a Changelog](https://keepachangelog.com/) groups: Security
 
 ## Unreleased
 
-## v1.0.0 - 2026-10-07 (development resumes under the Tiresias name)
+## v1.0.0 - 2026-10-08 (development resumes under the Tiresias name)
 
 ### Added
 
