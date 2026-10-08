@@ -3,12 +3,12 @@ __pycache__/
 *.egg-info/
 build/
 dist/
-.gpi/
+.tiresias/
 *.db
 *.manifest.json
 *.bundle.json
 .playwright-mcp/
-gpi-*.png
+tiresias-*.png
 .venv/
 venv/
 .DS_Store

@@ -3,10 +3,10 @@
     python3.12 examples/integration_example.py
 
 This is the snippet a client copies to integrate Tiresias: commit a private dataset,
-prove aggregate queries, and verify the proofs — all in a few calls.
+prove aggregate queries, and verify the proofs, all in a few calls.
 """
 
-from gpi.sdk import ColType, LocalEngine
+from tiresias.sdk import ColType, LocalEngine
 
 CSV = "examples/payroll.csv"
 TYPES = {"dept": ColType.CATEGORY, "remote": ColType.BOOL}

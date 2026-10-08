@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tiresias"
-version = "0.1.0"
-description = "Verifiable private analytics: commit sensitive datasets, prove aggregate queries in zero-knowledge. Built on Glass."
+version = "1.0.0"
+description = "Verifiable private analytics: commit a sensitive dataset, answer aggregate queries over it with proofs. Built on Glass."
 authors = [{name = "Egor Khaklin"}]
 license = "Apache-2.0"
 requires-python = ">=3.10"
@@ -17,9 +17,9 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
 ]
 # Glass (glass-lang) is the proving engine, needed only by the LOCAL PROVER. It
-# is resolved at runtime from GPI_GLASS_DIR (default ~/Desktop/Glass) and treated
+# is resolved at runtime from TIRESIAS_GLASS_DIR (default ~/Desktop/Glass) and treated
 # as read-only. The registry server does NOT need it (it verifies bindings only).
-# Pure-stdlib otherwise — no third-party dependencies.
+# Pure-stdlib otherwise: no third-party dependencies.
 dependencies = []
 
 [project.urls]
@@ -27,15 +27,15 @@ Repository = "https://github.com/EgorKhaklin/tiresias"
 "Built on Glass" = "https://github.com/EgorKhaklin/Glass"
 
 [project.scripts]
-gpi = "gpi.cli:main"
+tiresias = "tiresias.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["gpi*"]
+include = ["tiresias*"]
 
 [tool.setuptools.package-data]
-"gpi.web" = ["*.html"]
-"gpi.registry" = ["*.html"]
+"tiresias.web" = ["*.html"]
+"tiresias.registry" = ["*.html"]
 
 [tool.pyright]
-include = ["gpi", "spike.py"]
+include = ["tiresias"]
 extraPaths = ["."]

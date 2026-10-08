@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tiresias Registry</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b0f14'/><path d='M16 6L26 25H6Z' fill='none' stroke='%235cc8ff' stroke-width='2.6' stroke-linejoin='round'/></svg>">
+<style>
+  :root { --bg:#0b0f14; --panel:rgba(255,255,255,.04); --panel2:#0e141b; --line:rgba(255,255,255,.10);
+    --ink:#e8eef5; --dim:#8aa0b4; --accent:#5cc8ff; --ok:#4ade80; --bad:#f87171; --warn:#fbbf24; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:radial-gradient(1200px 500px at 50% -15%, #11202c 0%, var(--bg) 50%);
+    color:var(--ink); font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; min-height:100vh; }
+  a { color:var(--accent); text-decoration:none; }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  header { display:flex; justify-content:space-between; align-items:center; gap:12px;
+    padding:18px 28px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .brand { font-weight:700; } .brand .g { color:var(--accent); }
+  .brand .sub { color:var(--dim); font-weight:400; font-size:13px; margin-left:8px; }
+  .conn { display:flex; align-items:center; gap:10px; font-size:13px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--bad); }
+  .dot.on { background:var(--ok); box-shadow:0 0 8px var(--ok); }
+  main { max-width:1040px; margin:0 auto; padding:24px 20px 90px; }
+
+  input,button { font:inherit; }
+  input[type=password],input[type=text] { background:var(--panel2); color:var(--ink); border:1px solid var(--line);
+    border-radius:9px; padding:10px 12px; font-size:13px; }
+  button { background:var(--accent); color:#04121c; border:0; border-radius:9px; padding:9px 15px; font-weight:600; font-size:13px; cursor:pointer; transition:opacity .15s; }
+  button:hover { opacity:.9; } button:disabled { opacity:.5; cursor:wait; }
+  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); font-weight:500; }
+  button.tiny { padding:4px 9px; font-size:12px; }
+
+  /* connect card */
+  .connect { max-width:460px; margin:60px auto; background:var(--panel); border:1px solid var(--line);
+    border-radius:16px; padding:28px; text-align:center; }
+  .connect h2 { margin:0 0 6px; font-size:18px; }
+  .connect p { color:var(--dim); font-size:13.5px; margin:0 0 18px; }
+  .connect input { width:100%; margin-bottom:12px; }
+  .connect button { width:100%; }
+
+  /* stats */
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:8px; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px; }
+  .stat .v { font-size:28px; font-weight:700; } .stat .k { color:var(--dim); font-size:12.5px; text-transform:uppercase; letter-spacing:.05em; }
+
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin-top:16px; }
+  .panel h2 { margin:0 0 12px; font-size:13px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:500; }
+  tr:last-child td { border-bottom:0; }
+  .pill { font-weight:700; font-size:12px; padding:2px 9px; border-radius:99px; }
+  .pill.ok { color:var(--ok); background:rgba(74,222,128,.12); } .pill.bad { color:var(--bad); background:rgba(248,113,113,.12); }
+  .pill.dim { color:var(--dim); background:rgba(255,255,255,.05); }
+  .copy { cursor:pointer; color:var(--dim); border:0; background:none; padding:0 0 0 6px; font-size:12px; }
+  .copy:hover { color:var(--accent); }
+  .actions { display:flex; gap:6px; }
+  .inline { margin-top:8px; font-size:12.5px; }
+  .check { padding:2px 0; } .m.ok{color:var(--ok);font-weight:700;} .m.bad{color:var(--bad);font-weight:700;}
+  .sharelink { margin-top:8px; display:flex; gap:6px; align-items:center; font-size:12.5px; }
+  .sharelink input { flex:1; }
+  .empty { color:var(--dim); font-size:13px; padding:6px 0; }
+  .muted { color:var(--dim); font-size:12.5px; }
+  .note { color:var(--dim); font-size:12.5px; margin-top:10px; }
+
+  /* toast */
+  #toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:#16202b; border:1px solid var(--line); color:var(--ink); padding:10px 16px; border-radius:10px;
+    font-size:13px; opacity:0; pointer-events:none; transition:all .2s; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  #toast.bad { border-color:var(--bad); }
+
+  @media (max-width:640px){ .stats{grid-template-columns:1fr;} header{padding:14px 16px;} }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Tiresias <span class="sub">Registry</span></div>
+  <div class="conn">
+    <span class="dot" id="dot"></span>
+    <span id="connText" class="muted">not connected</span>
+    <button class="ghost tiny" id="btnRefresh" style="display:none">refresh</button>
+    <button class="ghost tiny" id="btnDisconnect" style="display:none">disconnect</button>
+  </div>
+</header>
+<main>
+  <div id="connectCard" class="connect">
+    <h2>Connect to your registry</h2>
+    <p>Enter your API key. Proving runs on your machine via <span class="mono">tiresias remote-commit</span> /
+       <span class="mono">remote-query</span>; this console lists and verifies what was uploaded.</p>
+    <input type="password" id="key" placeholder="tir_live_…" autocomplete="off">
+    <button id="btnConnect">Connect</button>
+    <div id="connErr" class="note" style="color:var(--bad)"></div>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="stats">
+      <div class="stat"><div class="v" id="sDatasets">–</div><div class="k">Datasets</div></div>
+      <div class="stat"><div class="v" id="sBundles">–</div><div class="k">Proof bundles</div></div>
+      <div class="stat"><div class="v" id="sVerified">–</div><div class="k">Bound &amp; verified</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Datasets</h2>
+      <table><thead><tr><th>dataset</th><th>commitment</th><th>rows</th><th>crypto</th><th>integrate</th></tr></thead>
+      <tbody id="datasets"></tbody></table>
+    </div>
+
+    <div class="panel">
+      <h2>Proof bundles</h2>
+      <table><thead><tr><th>query</th><th>answer</th><th>proof</th><th>binding</th><th></th></tr></thead>
+      <tbody id="bundles"></tbody></table>
+    </div>
+
+    <div class="panel">
+      <h2>Audit log</h2>
+      <table><thead><tr><th>when</th><th>action</th><th>detail</th></tr></thead><tbody id="audit"></tbody></table>
+    </div>
+    <div class="note">The registry verifies that each bundle is bound to a published commitment (Tier 1,
+      witness-free). Reproducible soundness (Tier 2) is run by the data-holder, who alone has the rows.
+      Educational-grade cryptography.</div>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+let KEY = localStorage.getItem("tiresias_key") || "";
+
+function toast(msg, bad=false){ const t=document.getElementById("toast"); t.textContent=msg;
+  t.className="show"+(bad?" bad":""); clearTimeout(t._t); t._t=setTimeout(()=>t.className="",1800); }
+async function copy(text){ try{ await navigator.clipboard.writeText(text); toast("copied"); }catch{ toast("copy failed",true); } }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function api(path, method="GET", body=null){
+  const opt={method,headers:{"Authorization":"Bearer "+KEY,"Content-Type":"application/json"}};
+  if(body) opt.body=JSON.stringify(body);
+  const r=await fetch(path,opt); const j=await r.json();
+  if(!r.ok) throw new Error(j.error||("HTTP "+r.status));
+  return j;
+}
+function pill(ok,t,cls){ return `<span class="pill ${cls||(ok?'ok':'bad')}">${t}</span>`; }
+function copyBtn(v){ return `<button class="copy" title="copy" onclick='copy(${JSON.stringify(String(v))})'>⧉</button>`; }
+function fmtResult(r){
+  if(r&&r.groups) return Object.entries(r.groups).map(([k,v])=>`${esc(k)}: ${v}`).join(" · ");
+  if(r&&"value" in r) return r.value;
+  if(r&&"avg" in r) return `${r.avg} <span class="muted">(Σ${r.sum}/${r.count})</span>`;
+  return esc(JSON.stringify(r));
+}
+
+function setConnected(on, who){
+  document.getElementById("dot").className="dot"+(on?" on":"");
+  document.getElementById("connText").textContent = on?`${who.org_name} · ${who.org_id}`:"not connected";
+  document.getElementById("btnDisconnect").style.display = on?"inline-block":"none";
+  document.getElementById("btnRefresh").style.display = on?"inline-block":"none";
+  document.getElementById("connectCard").style.display = on?"none":"block";
+  document.getElementById("app").style.display = on?"block":"none";
+}
+
+async function refresh(){
+  const who=await api("/api/whoami");
+  setConnected(true, who);
+
+  const s=await api("/api/stats");
+  document.getElementById("sDatasets").textContent=s.datasets;
+  document.getElementById("sBundles").textContent=s.bundles;
+  document.getElementById("sVerified").textContent=s.verified_bundles;
+
+  const ms=(await api("/api/manifests")).manifests;
+  document.getElementById("datasets").innerHTML = ms.length ? ms.map(m=>{
+    const snippet = `tiresias remote-query ${m.dataset_id} "SELECT COUNT(*)" --data <your.csv>`;
+    return `<tr><td>${esc(m.name||'')} <span class="muted mono">${esc(m.dataset_id)}</span>${copyBtn(m.dataset_id)}</td>
+     <td class="mono">${m.commitment}${copyBtn(m.commitment)}</td><td>${m.row_count}</td>
+     <td>${pill(false,esc(m.crypto_grade),'dim')}</td>
+     <td><button class="copy" title="copy a query command" onclick='copy(${JSON.stringify(snippet)})'>⧉ query</button></td></tr>`;
+    }).join("")
+    : `<tr><td colspan=5 class="empty">No datasets yet. Run <span class="mono">tiresias remote-commit</span>.</td></tr>`;
+
+  const bs=(await api("/api/bundles")).bundles;
+  document.getElementById("bundles").innerHTML = bs.length ? bs.map(b=>
+    `<tr><td>${esc(b.query)}</td><td class="mono">${fmtResult(b.result)}</td>
+     <td>${pill(b.accepted,b.accepted?'ACCEPT':'REJECT')}</td>
+     <td>${pill(b._verified,b._verified?'bound':'unbound', b._verified?'ok':'bad')}</td>
+     <td><div class="actions"><button class="ghost tiny" onclick="doVerify('${b.bundle_id}')">verify</button>
+       <button class="ghost tiny" onclick="doShare('${b.bundle_id}')">share</button></div>
+       <div class="inline" id="x_${b.bundle_id}"></div></td></tr>`).join("")
+    : `<tr><td colspan=5 class="empty">No bundles yet. Run <span class="mono">tiresias remote-query</span>.</td></tr>`;
+
+  const al=(await api("/api/audit")).audit;
+  document.getElementById("audit").innerHTML = al.length ? al.map(a=>
+    `<tr><td class="muted">${new Date(a.ts*1000).toLocaleString()}</td><td class="mono">${esc(a.action)}</td>
+     <td class="muted">${esc(a.detail||'')}</td></tr>`).join("")
+    : `<tr><td colspan=3 class="empty">No activity yet.</td></tr>`;
+}
+
+async function doVerify(id){
+  const el=document.getElementById("x_"+id); el.innerHTML='<span class="muted">verifying…</span>';
+  try{ const v=(await api(`/api/bundles/${id}/verify`,"POST")).verification;
+    el.innerHTML = v.checks.map(c=>`<div class="check"><span class="m ${c.passed?'ok':'bad'}">${c.passed?'PASS':'FAIL'}</span> ${esc(c.name)}</div>`).join("")
+      + `<div>${pill(v.ok,v.ok?'VERIFIED':'NOT VERIFIED')} <span class="muted">${esc(v.tier)}</span></div>`;
+  }catch(e){ el.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+}
+async function doShare(id){
+  const el=document.getElementById("x_"+id); el.innerHTML='<span class="muted">creating link…</span>';
+  try{ const r=await api(`/api/bundles/${id}/share`,"POST");
+    const url=location.origin+r.view_path;
+    el.innerHTML = `<div class="sharelink"><input type="text" readonly value="${esc(url)}" onclick="this.select()">
+      <button class="tiny" onclick='copy(${JSON.stringify(url)})'>copy</button>
+      <a class="tiny" href="${esc(url)}" target="_blank" style="padding:4px 9px;border:1px solid var(--line);border-radius:9px;">open</a></div>
+      <div class="muted">Public link: anyone can verify the binding, no account or data needed.</div>`;
+    toast("share link created");
+  }catch(e){ el.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+}
+
+async function connect(){
+  KEY=document.getElementById("key").value.trim();
+  document.getElementById("connErr").textContent="";
+  const btn=document.getElementById("btnConnect"); btn.disabled=true;
+  try{ await refresh(); localStorage.setItem("tiresias_key",KEY); }
+  catch(e){ document.getElementById("connErr").textContent=e.message; setConnected(false); }
+  finally{ btn.disabled=false; }
+}
+function disconnect(){ KEY=""; localStorage.removeItem("tiresias_key"); setConnected(false);
+  document.getElementById("key").value=""; }
+
+document.getElementById("btnConnect").onclick=connect;
+document.getElementById("key").addEventListener("keydown",e=>{ if(e.key==="Enter") connect(); });
+document.getElementById("btnDisconnect").onclick=disconnect;
+document.getElementById("btnRefresh").onclick=()=>refresh().catch(e=>toast(e.message,true));
+if(KEY){ document.getElementById("key").value=KEY; refresh().catch(()=>setConnected(false)); }
+</script>
+</body>
+</html>

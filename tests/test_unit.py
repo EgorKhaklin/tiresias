@@ -13,19 +13,22 @@ import tempfile
 import time
 import unittest
 
-from gpi.engine.commit import Manifest
-from gpi.engine.prover import _check_field_capacity, _check_ranges
-from gpi.engine.schema import (
+# Keep the registry database out of the home directory: config reads this at import.
+os.environ.setdefault("TIRESIAS_DB", os.path.join(tempfile.mkdtemp(prefix="tiresias-test-"), "registry.db"))
+
+from tiresias.engine.commit import Manifest
+from tiresias.engine.prover import _check_field_capacity, _check_ranges
+from tiresias.engine.schema import (
     Column,
     ColType,
     Dataset,
-    GpiFieldError,
-    GpiRangeError,
+    TiresiasFieldError,
+    TiresiasRangeError,
 )
-from gpi.query.pane_ast import Table, _gstr
-from gpi.query import sql
-from gpi.query.pane_ast import Col, GtE, LitI
-from gpi.query.spec import (
+from tiresias.query.pane_ast import Table, _gstr
+from tiresias.query import sql
+from tiresias.query.pane_ast import Col, GtE, LitI
+from tiresias.query.spec import (
     AGG_AVG,
     AGG_COUNT,
     AGG_GROUPBY,
@@ -34,8 +37,8 @@ from gpi.query.spec import (
     AGG_SUM,
     QuerySpec,
 )
-from gpi.registry import auth
-from gpi.registry.store import Store
+from tiresias.registry import auth
+from tiresias.registry.store import Store
 
 
 def _manifest() -> Manifest:
@@ -56,7 +59,7 @@ def _manifest() -> Manifest:
 
 class TestInference(unittest.TestCase):
     def test_infer_types(self):
-        from gpi.engine.schema import infer_types
+        from tiresias.engine.schema import infer_types
 
         headers = ["dept", "level", "salary", "remote", "note"]
         rows = [
@@ -165,10 +168,10 @@ class TestRangeGuard(unittest.TestCase):
         # MIN on a small-domain column is fine
         _check_ranges(ds, QuerySpec(agg=AGG_MIN, column="level", predicate=None))
         # MIN on out-of-range values is refused with a clear error
-        with self.assertRaises(GpiRangeError):
+        with self.assertRaises(TiresiasRangeError):
             _check_ranges(ds, QuerySpec(agg=AGG_MIN, column="salary", predicate=None))
         # a > filter on out-of-range values is refused too
-        with self.assertRaises(GpiRangeError):
+        with self.assertRaises(TiresiasRangeError):
             _check_ranges(
                 ds, QuerySpec(agg=AGG_SUM, column="level",
                               predicate=GtE(Col("salary"), LitI(100))),
@@ -181,7 +184,7 @@ class TestFieldCapacity(unittest.TestCase):
         big = 1_000_000_000
         ds = Dataset(columns=[Column("amt", ColType.INT)],
                      rows=[[big], [big], [big]])
-        with self.assertRaises(GpiFieldError):
+        with self.assertRaises(TiresiasFieldError):
             _check_field_capacity(ds, QuerySpec(agg=AGG_SUM, column="amt", predicate=None))
 
     def test_normal_sum_ok(self):
@@ -223,7 +226,7 @@ class TestStoreAuth(unittest.TestCase):
         key = self.store.issue_key(org, "laptop")
         self.assertTrue(auth.key_looks_valid(key))
         self.assertEqual(self.store.org_for_key(key), org)
-        self.assertIsNone(self.store.org_for_key("gpi_live_wrong"))
+        self.assertIsNone(self.store.org_for_key("tir_live_wrong"))
         # the raw key must not appear anywhere in the DB file
         with open(os.path.join(self.tmp, "r.db"), "rb") as f:
             self.assertNotIn(key.encode(), f.read())
@@ -264,7 +267,7 @@ class TestStoreAuth(unittest.TestCase):
 
 class TestRegistryHandle(unittest.TestCase):
     def setUp(self):
-        from gpi.registry import server
+        from tiresias.registry import server
 
         self.server = server
         self.tmp = tempfile.mkdtemp()
@@ -306,7 +309,7 @@ class TestRegistryHandle(unittest.TestCase):
         self.assertFalse(payload["verification"]["ok"])  # binding fails
 
     def test_bundle_without_manifest_rejected(self):
-        from gpi.registry.server import ApiError
+        from tiresias.registry.server import ApiError
 
         with self.assertRaises(ApiError):
             self.server.handle("POST", "/api/bundles", self.org, self._bundle_dict())
@@ -324,7 +327,7 @@ class TestRegistryHandle(unittest.TestCase):
 
 class TestAdmin(unittest.TestCase):
     def setUp(self):
-        from gpi.registry import server
+        from tiresias.registry import server
 
         self.server = server
         self.tmp = tempfile.mkdtemp()
@@ -358,7 +361,7 @@ class TestAdmin(unittest.TestCase):
         self.assertIsNone(self.server.STORE.org_for_key(key))  # revoked key dead
 
     def test_admin_unknown_org(self):
-        from gpi.registry.server import ApiError
+        from tiresias.registry.server import ApiError
 
         with self.assertRaises(ApiError):
             self.server.handle_admin("POST", "/api/admin/orgs/org_nope/keys", {})
@@ -366,7 +369,7 @@ class TestAdmin(unittest.TestCase):
 
 class TestHardening(unittest.TestCase):
     def test_rate_limiter(self):
-        from gpi.registry.server import RateLimiter
+        from tiresias.registry.server import RateLimiter
 
         rl = RateLimiter(2)
         self.assertTrue(rl.allow("k"))
@@ -390,7 +393,7 @@ class TestHardening(unittest.TestCase):
             store.close()
 
     def test_global_stats_and_metrics(self):
-        from gpi.registry import server
+        from tiresias.registry import server
 
         tmp = tempfile.mkdtemp()
         server.STORE = Store(os.path.join(tmp, "r.db"))
@@ -402,13 +405,13 @@ class TestHardening(unittest.TestCase):
             self.assertEqual(gs["orgs"], 1)
             self.assertEqual(gs["datasets"], 1)
             text = server.metrics_text()
-            self.assertIn("# TYPE gpi_datasets gauge", text)
-            self.assertIn("gpi_datasets 1", text)
+            self.assertIn("# TYPE tiresias_datasets gauge", text)
+            self.assertIn("tiresias_datasets 1", text)
         finally:
             server.STORE.close()
 
     def test_handle_pagination_query(self):
-        from gpi.registry import server
+        from tiresias.registry import server
 
         tmp = tempfile.mkdtemp()
         server.STORE = Store(os.path.join(tmp, "r.db"))
@@ -425,7 +428,7 @@ class TestHardening(unittest.TestCase):
 
 class TestShares(unittest.TestCase):
     def setUp(self):
-        from gpi.registry import server
+        from tiresias.registry import server
 
         self.server = server
         self.tmp = tempfile.mkdtemp()
@@ -457,7 +460,7 @@ class TestShares(unittest.TestCase):
         self.assertNotIn("rows", payload["bundle"])  # never any rows
 
     def test_unknown_share_token(self):
-        from gpi.registry.server import ApiError
+        from tiresias.registry.server import ApiError
 
         with self.assertRaises(ApiError):
             self.server.public_share_payload("shr_does_not_exist")

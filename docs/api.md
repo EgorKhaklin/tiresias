@@ -1,7 +1,7 @@
 # Registry API reference
 
 The registry stores manifests and proof bundles and verifies their binding. It
-**never receives raw data** and never runs the prover — proving happens on the
+**never receives raw data** and never runs the prover; proving happens on the
 data-holder's machine (see the local prover / SDK). Base URL defaults to
 `http://127.0.0.1:8765`.
 
@@ -10,20 +10,20 @@ data-holder's machine (see the local prover / SDK). Base URL defaults to
 All `/api/*` endpoints (except the public share routes) require an API key:
 
 ```
-Authorization: Bearer gpi_live_…
+Authorization: Bearer tir_live_…
 ```
 
-Provision an org + key on the box with `gpi create-org "<name>"`, or over the
+Provision an org + key on the box with `tiresias create-org "<name>"`, or over the
 admin API (below). Keys are shown once and stored only as a hash.
 
 Admin endpoints under `/api/admin/*` require the admin token instead:
 
 ```
-Authorization: Bearer $GPI_ADMIN_TOKEN
+Authorization: Bearer $TIRESIAS_ADMIN_TOKEN
 ```
 
-Limits: per-key rate limit (`GPI_RATE_PER_MIN`, default 240/min → `429`), max body
-`GPI_MAX_BODY_BYTES` (default 2 MB → `413`). List endpoints accept `?limit=&offset=`.
+Limits: per-key rate limit (`TIRESIAS_RATE_PER_MIN`, default 240/min → `429`), max body
+`TIRESIAS_MAX_BODY_BYTES` (default 2 MB → `413`). List endpoints accept `?limit=&offset=`.
 
 ## Endpoints
 
@@ -54,7 +54,7 @@ Limits: per-key rate limit (`GPI_RATE_PER_MIN`, default 240/min → `429`), max 
 
 ```bash
 # provision a tenant (admin)
-curl -H "Authorization: Bearer $GPI_ADMIN_TOKEN" \
+curl -H "Authorization: Bearer $TIRESIAS_ADMIN_TOKEN" \
      -d '{"name":"Acme Health"}' http://localhost:8765/api/admin/orgs
 
 # register a manifest (produced locally by the prover/SDK)
@@ -76,6 +76,6 @@ JSON `{"error": "..."}` with HTTP `400` (bad request), `401` (auth), `404`
 
 ## Programmatic use
 
-Prefer the SDK (`gpi.sdk`): `Gpi(registry_url, api_key)` exposes `commit_csv`,
-`query`, `share`, `datasets`, `bundles` — proving locally and uploading only
+Prefer the SDK (`tiresias.sdk`): `Tiresias(registry_url, api_key)` exposes `commit_csv`,
+`query`, `share`, `datasets`, `bundles`, proving locally and uploading only
 manifests + bundles. See `examples/integration_example.py`.

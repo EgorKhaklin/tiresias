@@ -10,9 +10,13 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import unittest
 
-from gpi.engine.drivers import glass_dir
+# Keep the registry database out of the home directory: config reads this at import.
+os.environ.setdefault("TIRESIAS_DB", os.path.join(tempfile.mkdtemp(prefix="tiresias-test-"), "registry.db"))
+
+from tiresias.engine.drivers import glass_dir
 
 GLASS_OK = os.path.exists(os.path.join(glass_dir(), "glass.py")) and sys.version_info >= (3, 10)
 
@@ -20,11 +24,11 @@ GLASS_OK = os.path.exists(os.path.join(glass_dir(), "glass.py")) and sys.version
 @unittest.skipUnless(GLASS_OK, "Glass engine not available (needs glass.py + py3.10+)")
 class TestEngineRoundtrip(unittest.TestCase):
     def test_commit_prove_verify_tamper(self):
-        from gpi.engine.commit import commit_dataset
-        from gpi.engine.prover import prove
-        from gpi.engine.schema import Column, ColType, Dataset
-        from gpi.engine.verify import verify_bundle
-        from gpi.query import sql
+        from tiresias.engine.commit import commit_dataset
+        from tiresias.engine.prover import prove
+        from tiresias.engine.schema import Column, ColType, Dataset
+        from tiresias.engine.verify import verify_bundle
+        from tiresias.query import sql
 
         ds = Dataset(
             columns=[

@@ -5,13 +5,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 COPY pyproject.toml ./
-COPY gpi ./gpi
+COPY tiresias ./tiresias
 RUN pip install --no-cache-dir .
 
-ENV GPI_HOST=0.0.0.0 \
-    GPI_PORT=8765 \
-    GPI_DB=/data/registry.db \
-    GPI_LOG_LEVEL=INFO
+ENV TIRESIAS_HOST=0.0.0.0 \
+    TIRESIAS_PORT=8765 \
+    TIRESIAS_DB=/data/registry.db \
+    TIRESIAS_LOG_LEVEL=INFO
 
 VOLUME ["/data"]
 EXPOSE 8765
@@ -19,4 +19,4 @@ EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/healthz').status==200 else 1)"
 
-CMD ["gpi", "serve"]
+CMD ["tiresias", "serve"]

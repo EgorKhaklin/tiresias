@@ -9,18 +9,18 @@ engine on disk (it does all the proving):
 
 ```bash
 git clone https://github.com/EgorKhaklin/Glass ~/Desktop/Glass
-export GPI_GLASS_DIR=~/Desktop/Glass
+export TIRESIAS_GLASS_DIR=~/Desktop/Glass
 pip install -e .
 python3.12 -m unittest discover -s tests     # fast suite; engine test self-skips without Glass
-python3.12 -m gpi.demo                         # full narrated demo
+python3.12 -m tiresias.demo                  # full narrated demo
 ```
 
-Tiresias itself has **no third-party Python dependencies** — keep it that way.
+Tiresias itself has **no third-party Python dependencies**; keep it that way.
 
 ## Principles
 
 - **Honesty over hype.** This product sells *verifiability*; never overclaim what a
-  proof guarantees. The cryptography is educational-grade — say so. Every artifact
+  proof guarantees. The cryptography is educational-grade: say so. Every artifact
   carries `crypto-grade: educational`.
 - **Never modify the Glass repo.** Extend via Tiresias-owned drivers; slice Glass
   functions at runtime rather than copying them.

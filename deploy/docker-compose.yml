@@ -2,13 +2,13 @@
 #
 # The registry stores manifests + proof bundles and verifies bindings. It never
 # sees raw data. Proving runs on the data-holder's own machine via the local
-# prover CLI (`gpi remote-commit` / `gpi remote-query`), which needs the Glass
-# engine and is intentionally NOT containerized here — it lives where the data
+# prover CLI (`tiresias remote-commit` / `tiresias remote-query`), which needs the Glass
+# engine and is intentionally NOT containerized here: it lives where the data
 # lives.
 #
 #   docker compose -f deploy/docker-compose.yml up --build
 #   # then provision an org inside the container:
-#   docker compose -f deploy/docker-compose.yml exec registry gpi create-org "Acme"
+#   docker compose -f deploy/docker-compose.yml exec registry tiresias create-org "Acme"
 
 services:
   registry:
@@ -18,10 +18,10 @@ services:
     ports:
       - "8765:8765"
     volumes:
-      - gpi-data:/data
+      - tiresias-data:/data
     environment:
-      GPI_LOG_LEVEL: INFO
+      TIRESIAS_LOG_LEVEL: INFO
     restart: unless-stopped
 
 volumes:
-  gpi-data:
+  tiresias-data:
