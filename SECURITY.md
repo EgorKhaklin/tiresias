@@ -2,7 +2,7 @@
 
 ## Cryptographic maturity — read this first
 
-Glass Private Intelligence is, today, a **working demonstration** of verifiable
+Tiresias is, today, a **working demonstration** of verifiable
 private analytics. Its cryptography is **educational-grade**, inherited from
 [Glass](https://github.com/EgorKhaklin/Glass):
 
@@ -10,7 +10,7 @@ private analytics. Its cryptography is **educational-grade**, inherited from
 - Hash: MiMC / a reduced-round Poseidon — **unaudited**.
 - No parameter analysis, no constant-time guarantees, **no external audit**.
 
-**Do not use GPI to protect real secrets or real value.** Every artifact it
+**Do not use Tiresias to protect real secrets or real value.** Every artifact it
 produces is stamped `crypto-grade: educational`. What *is* rigorous is the
 structural completeness of the zk-STARK and the differential-testing discipline
 behind Glass — not the production-strength of the primitives.

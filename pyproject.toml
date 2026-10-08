@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "glass-private-intelligence"
+name = "tiresias"
 version = "0.1.0"
 description = "Verifiable private analytics: commit sensitive datasets, prove aggregate queries in zero-knowledge. Built on Glass."
 authors = [{name = "Egor Khaklin"}]
@@ -23,7 +23,7 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Repository = "https://github.com/EgorKhaklin/glass-private-intelligence"
+Repository = "https://github.com/EgorKhaklin/tiresias"
 "Built on Glass" = "https://github.com/EgorKhaklin/Glass"
 
 [project.scripts]

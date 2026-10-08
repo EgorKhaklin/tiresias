@@ -1,4 +1,4 @@
-"""gpi — Glass Private Intelligence command line.
+"""gpi — the Tiresias command line.
 
   gpi commit <csv> --name N [--types dept=category,remote=bool] -o manifest.json
   gpi query  <manifest.json> "SELECT SUM(salary) WHERE dept='eng'" --data <csv> -o bundle.json

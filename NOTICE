@@ -1,4 +1,4 @@
-Glass Private Intelligence (GPI)
+Tiresias (formerly Glass Private Intelligence, GPI)
 Copyright 2026 Egor Khaklin
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
@@ -7,21 +7,21 @@ This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 Dependency: Glass
 ----------------------------------------------------------------------
 
-GPI is built on and depends, at runtime, on Glass — a self-hosting verifiable
+Tiresias is built on and depends, at runtime, on Glass — a self-hosting verifiable
 functional language with a from-scratch zk-STARK toolkit, which performs ALL of
-the cryptographic proving in GPI. GPI does not reimplement any cryptography; it
+the cryptographic proving in Tiresias. Tiresias does not reimplement any cryptography; it
 generates Glass programs and executes them with the Glass engine.
 
   Glass — https://github.com/EgorKhaklin/Glass
   Copyright 2026 Egor Khaklin
   Licensed under the Apache License, Version 2.0, or the MIT License.
 
-Glass is NOT bundled with GPI. It is resolved at runtime from the path given by
-the GPI_GLASS_DIR environment variable (default: ~/Desktop/Glass). Only GPI's
+Glass is NOT bundled with Tiresias. It is resolved at runtime from the path given by
+the GPI_GLASS_DIR environment variable (default: ~/Desktop/Glass). Only Tiresias's
 local prover invokes Glass; the registry server is engine-free.
 
 ----------------------------------------------------------------------
 
 The cryptography provided by Glass is EDUCATIONAL-GRADE — a working demonstration,
 not production-hardened security. See Glass's docs/soundness.md. Every artifact
-GPI produces is labeled `crypto-grade: educational`.
+Tiresias produces is labeled `crypto-grade: educational`.

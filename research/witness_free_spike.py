@@ -49,7 +49,7 @@ TOWARD SOUNDNESS — the specific blocker (worked out while extending this spike
   q + Z_H*blind so the blind cancels on the trace domain), or a separate blind
   commitment with a low-degree-enough blind. That changes the prover's quotient
   construction, i.e. it is a protocol-design change to Glass's STARK (or a
-  GPI-owned reimplementation) — genuine zk-STARK research, still educational-grade
+  Tiresias-owned reimplementation) — genuine zk-STARK research, still educational-grade
   in its primitives. It is NOT mere verifier plumbing, which is why this stays a
   spike rather than a shipped verifier.
 

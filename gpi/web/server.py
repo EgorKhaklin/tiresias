@@ -1,4 +1,4 @@
-"""A stdlib-only web server for the Glass Private Intelligence dashboard.
+"""A stdlib-only web server for the Tiresias dashboard.
 
 No external dependencies (mirrors Glass's own stdlib-only discipline). It serves
 a single-page dashboard and a small JSON API that drives the real engine:
@@ -162,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(host: str = "127.0.0.1", port: int = 8765) -> None:
-    print(f"Glass Private Intelligence dashboard -> http://{host}:{port}")
+    print(f"Tiresias dashboard -> http://{host}:{port}")
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 

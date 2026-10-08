@@ -2,7 +2,7 @@
 
 Imports the Glass reference interpreter (glass.py) directly and runs generated
 drivers, capturing stdout and parsing the GPI_* result lines. This is the single
-point where GPI touches Glass; everything above it works in Python.
+point where Tiresias touches Glass; everything above it works in Python.
 """
 
 from __future__ import annotations

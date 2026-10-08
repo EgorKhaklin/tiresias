@@ -1,4 +1,4 @@
-# The GPI registry server. Engine-free by design: it verifies bundle bindings
+# The Tiresias registry server. Engine-free by design: it verifies bundle bindings
 # (witness-free) and never receives raw data or runs the Glass prover, so the
 # image needs no Glass and no third-party packages.
 FROM python:3.12-slim

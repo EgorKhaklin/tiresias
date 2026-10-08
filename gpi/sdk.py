@@ -1,4 +1,4 @@
-"""Glass Private Intelligence — Python SDK.
+"""Tiresias — Python SDK.
 
 Two entry points:
 

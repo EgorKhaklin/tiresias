@@ -1,4 +1,4 @@
-"""The end-to-end Glass Private Intelligence demo.
+"""The end-to-end Tiresias demo.
 
 Scenario: a company holds a confidential payroll. It wants to let an auditor (or
 a benchmarking consortium, or a regulator) ask *aggregate* questions and trust
@@ -33,7 +33,7 @@ def _h(title: str) -> None:
 
 def run_demo() -> int:
     print(RULE)
-    print(" GLASS PRIVATE INTELLIGENCE — verifiable analytics over private data")
+    print(" TIRESIAS — verifiable analytics over private data")
     print(RULE)
     print(
         "A company holds a confidential payroll. It wants others to be able to ask\n"

@@ -1,4 +1,4 @@
-# Self-hosted GPI registry.
+# Self-hosted Tiresias registry.
 #
 # The registry stores manifests + proof bundles and verifies bindings. It never
 # sees raw data. Proving runs on the data-holder's own machine via the local

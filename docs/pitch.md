@@ -1,4 +1,4 @@
-# Glass Private Intelligence — the pitch
+# Tiresias — the pitch
 
 **Prove answers about private data without revealing the data.**
 
@@ -28,7 +28,7 @@ Three things ship today, working end to end:
 
 Zero-knowledge proofs have crossed from theory into infrastructure (rollups, zkML).
 The primitives are maturing fast; the *application layer* for "verifiable private
-analytics" is wide open. GPI is built on **Glass**, a uniquely complete
+analytics" is wide open. Tiresias is built on **Glass**, a uniquely complete
 self-hosting language that contains its own from-scratch zk-STARK — a credible,
 inspectable foundation rather than a black box.
 
@@ -52,7 +52,7 @@ audited hash, witness-free third-party verification, parameter analysis, and an
 external audit. This is a known, scoped path — not hand-waving.
 
 **The moat is the honesty.** A verifiability product that overclaims is dead on
-arrival. GPI's discipline — say exactly what's proven, stamp every artifact with its
+arrival. Tiresias's discipline — say exactly what's proven, stamp every artifact with its
 crypto grade — is both the engineering ethos and the trust differentiator.
 
 ## The ask / next milestones

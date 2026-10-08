@@ -1,4 +1,4 @@
-"""The Glass Private Intelligence registry server.
+"""The Tiresias registry server.
 
 Multi-tenant, API-key authenticated, persistent. It accepts manifests and proof
 bundles, verifies each bundle's binding to its manifest (witness-free — Tier 1),

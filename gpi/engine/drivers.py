@@ -1,4 +1,4 @@
-"""Generates Glass driver programs for the GPI engine.
+"""Generates Glass driver programs for the Tiresias engine.
 
 A driver is: the self-contained Pane+Frost machinery from
 ~/Desktop/Glass/examples/prove/prove_pane.glass (everything before its demo

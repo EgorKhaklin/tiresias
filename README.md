@@ -1,11 +1,19 @@
-# Glass Private Intelligence
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/tiresias-dark.svg">
+    <img src="assets/tiresias-light.svg" width="100%" alt="Tiresias: verifiable private analytics">
+  </picture>
+</p>
 
 **Verifiable analytics over data you never reveal.**
 
-[![CI](https://github.com/EgorKhaklin/glass-private-intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/EgorKhaklin/glass-private-intelligence/actions/workflows/ci.yml)
+[![CI](https://github.com/EgorKhaklin/tiresias/actions/workflows/ci.yml/badge.svg)](https://github.com/EgorKhaklin/tiresias/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![Built on Glass](https://img.shields.io/badge/built%20on-Glass-5cc8ff.svg)](https://github.com/EgorKhaklin/Glass)
+
+Named for Tiresias, the seer of Thebes who knew the truth without seeing it. Formerly Glass
+Private Intelligence (GPI); the package, its command and its settings keep the short name `gpi`.
 
 An organization commits a sensitive dataset, then anyone can run *aggregate*
 queries against it and receive **the answer plus a zero-knowledge proof that the
@@ -19,7 +27,7 @@ language whose from-scratch zk-STARK toolkit does the proving.
 > The cryptography here is **educational-grade** (Baby Bear field, unaudited
 > hash — inherited from Glass; see [`docs/soundness`](https://github.com/EgorKhaklin/Glass/blob/main/docs/soundness.md)).
 > It is a **working demonstration of the idea**, end to end — not a vault for real
-> secrets yet. Every artifact GPI produces is stamped `crypto-grade: educational`.
+> secrets yet. Every artifact Tiresias produces is stamped `crypto-grade: educational`.
 > What *is* rigorous is the structure and the differential-testing discipline
 > behind Glass. We say exactly what's real and what's roadmap, by design — because
 > a product that sells *verifiability* cannot afford to overclaim.
@@ -38,9 +46,9 @@ Anywhere you must **share a number but not the data**:
 ## Requirements & dependencies
 
 - **Python 3.12** (the proving engine, Glass, requires 3.10+).
-- **The Glass engine** — GPI is built on and depends on
+- **The Glass engine** — Tiresias is built on and depends on
   [Glass](https://github.com/EgorKhaklin/Glass) at **runtime** for all proving.
-  Clone it and point GPI at it via `GPI_GLASS_DIR` (default `~/Desktop/Glass`):
+  Clone it and point Tiresias at it via `GPI_GLASS_DIR` (default `~/Desktop/Glass`):
 
   ```bash
   git clone https://github.com/EgorKhaklin/Glass ~/Desktop/Glass
@@ -51,13 +59,13 @@ Anywhere you must **share a number but not the data**:
   > row. Only the **local prover** (`gpi commit` / `remote-commit` / `remote-query`)
   > invokes the Glass engine, on the machine where the data lives.
 
-- **No third-party Python packages** — GPI itself is pure standard library.
+- **No third-party Python packages** — Tiresias itself is pure standard library.
 
 ## Install
 
 ```bash
-git clone https://github.com/EgorKhaklin/glass-private-intelligence
-cd glass-private-intelligence
+git clone https://github.com/EgorKhaklin/tiresias
+cd tiresias
 pip install -e .                 # installs the `gpi` command (use a Python 3.12 env)
 ```
 
@@ -135,9 +143,9 @@ Track R) and is bounded by the educational-grade primitives.
 ## Honest limits
 
 - **Comparisons (`MIN`/`MAX`, `<`/`>`)** work on values **< 65,536** (Glass's
-  comparison gadget). GPI refuses out-of-range comparisons with a clear error.
+  comparison gadget). Tiresias refuses out-of-range comparisons with a clear error.
   Equality filters and SUM/COUNT/AVG/GROUP BY have no such limit.
-- **Sums must stay below the field** (~2.147 B). GPI refuses a SUM/AVG/GROUP BY
+- **Sums must stay below the field** (~2.147 B). Tiresias refuses a SUM/AVG/GROUP BY
   whose total would overflow, rather than proving a wrapped (unsound) value.
   Scale large columns to smaller units before committing.
 - **GROUP BY** keys are categorical.
@@ -187,9 +195,9 @@ Pure standard library — no third-party Python dependencies.
 
 ## Built on Glass
 
-GPI is a product layer over [**Glass**](https://github.com/EgorKhaklin/Glass), a
+Tiresias is a product layer over [**Glass**](https://github.com/EgorKhaklin/Glass), a
 self-hosting verifiable language with a from-scratch zk-STARK toolkit. Glass does
-all the proving; GPI never reimplements cryptography. Glass is a required runtime
+all the proving; Tiresias never reimplements cryptography. Glass is a required runtime
 dependency (resolved via `GPI_GLASS_DIR`) and is itself licensed Apache-2.0 / MIT.
 See [`NOTICE`](NOTICE).
 

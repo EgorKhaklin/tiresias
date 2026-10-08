@@ -1,10 +1,10 @@
 # Contributing
 
-Thanks for your interest in Glass Private Intelligence.
+Thanks for your interest in Tiresias.
 
 ## Setup
 
-GPI needs **Python 3.12** and the [Glass](https://github.com/EgorKhaklin/Glass)
+Tiresias needs **Python 3.12** and the [Glass](https://github.com/EgorKhaklin/Glass)
 engine on disk (it does all the proving):
 
 ```bash
@@ -15,14 +15,14 @@ python3.12 -m unittest discover -s tests     # fast suite; engine test self-skip
 python3.12 -m gpi.demo                         # full narrated demo
 ```
 
-GPI itself has **no third-party Python dependencies** — keep it that way.
+Tiresias itself has **no third-party Python dependencies** — keep it that way.
 
 ## Principles
 
 - **Honesty over hype.** This product sells *verifiability*; never overclaim what a
   proof guarantees. The cryptography is educational-grade — say so. Every artifact
   carries `crypto-grade: educational`.
-- **Never modify the Glass repo.** Extend via GPI-owned drivers; slice Glass
+- **Never modify the Glass repo.** Extend via Tiresias-owned drivers; slice Glass
   functions at runtime rather than copying them.
 - **The registry stays engine-free.** It stores and verifies bindings; it must never
   receive raw rows or run the prover.

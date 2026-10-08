@@ -1,4 +1,4 @@
-"""Phase 0 integration spike for Glass Private Intelligence.
+"""Phase 0 integration spike for Tiresias.
 
 Proves the founding capability end-to-end from Python, with a *programmatic*
 private table and query (not Glass's hardcoded demo):
@@ -33,7 +33,7 @@ def main() -> None:
         ],
     )
 
-    print("=== Glass Private Intelligence — Phase 0 spike ===")
+    print("=== Tiresias — Phase 0 spike ===")
     print("A private table is committed; only the commitment, query, and answer")
     print("are ever revealed. The rows stay secret.\n")
 
