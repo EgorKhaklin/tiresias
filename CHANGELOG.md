@@ -17,6 +17,7 @@ Entries use the [Keep a Changelog](https://keepachangelog.com/) groups: Security
 - A multi-tenant registry that never sees a row: API keys, tenant isolation, rate limits, an audit log, Prometheus metrics, and a public verification link that needs no account.
 - A local prover and registry client, so proving runs where the data lives; an embeddable SDK; a container image for the registry.
 - Every `TIRESIAS_*` setting is declared once with its type, range and reader. `tiresias serve` refuses to start on a malformed, out-of-range or unknown setting, or an admin token under 32 characters, and names each one; `tiresias config` prints the effective values; docs/configuration.md is generated from the declaration and a test keeps them equal.
+- Tiresias pins the Glass release it proves with, by tag and by the SHA-256 of the two Glass files it reads; it fetches that release on first use, refuses a checkout that differs and names the files, and loads the verified interpreter by path. `tiresias glass` shows the pin and the checkout; CI fetches the pinned Glass and runs the engine round trip.
 - Pushing a tag `vX.Y.Z` publishes a release: the job checks the tag against the package version, `tiresias --version` and the changelog, runs the unit tests, and attaches the wheel and source distribution with build-provenance attestations.
 
 ### Changed

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 
+from tiresias.engine import glass_pin
 from tiresias.query.pane_ast import CountQ, From, Query, Table
 
 # The demo marker that prove_pane.glass uses to separate reusable machinery from
@@ -20,9 +21,8 @@ _DEMO_MARKER = "# --- demo"
 
 
 def glass_dir() -> str:
-    return os.environ.get(
-        "TIRESIAS_GLASS_DIR", os.path.expanduser("~/Desktop/Glass")
-    )
+    """The verified Glass checkout (see tiresias.engine.glass_pin)."""
+    return glass_pin.glass_root()
 
 
 def _machinery() -> str:

@@ -29,12 +29,12 @@ A data holder commits a sensitive dataset and publishes only the commitment. Any
 
 ## Try it
 
-Tiresias is pure standard library and proves with [Glass](https://github.com/EgorKhaklin/Glass), which it reads from `TIRESIAS_GLASS_DIR` (default `~/Desktop/Glass`).
+Tiresias is pure standard library and proves with [Glass](https://github.com/EgorKhaklin/Glass). It pins the Glass release it was tested against, by tag and by the SHA-256 of every Glass file it reads, fetches that release on first use (with `git`), and refuses to prove with any other.
 
 ```bash
-git clone https://github.com/EgorKhaklin/Glass ~/Desktop/Glass
 git clone https://github.com/EgorKhaklin/tiresias && cd tiresias
 pip install -e .                       # Python 3.12; installs the `tiresias` command
+tiresias glass --fetch                 # fetch and verify the pinned Glass
 python3.12 -m tiresias.demo            # commit, query, verify, and watch a forgery fail
 ```
 

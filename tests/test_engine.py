@@ -16,12 +16,19 @@ import unittest
 # Keep the registry database out of the home directory: config reads this at import.
 os.environ.setdefault("TIRESIAS_DB", os.path.join(tempfile.mkdtemp(prefix="tiresias-test-"), "registry.db"))
 
-from tiresias.engine.drivers import glass_dir
+from tiresias.engine import glass_pin
 
-GLASS_OK = os.path.exists(os.path.join(glass_dir(), "glass.py")) and sys.version_info >= (3, 10)
+# Runs only against a Glass checkout that is already present and matches the pins;
+# the test never fetches.
+_GLASS_ROOT = glass_pin.resolve(fetch=False)
+GLASS_OK = (
+    _GLASS_ROOT is not None
+    and sys.version_info >= (3, 10)
+    and (not glass_pin.mismatches(_GLASS_ROOT) or os.environ.get("TIRESIAS_GLASS_UNPINNED") == "1")
+)
 
 
-@unittest.skipUnless(GLASS_OK, "Glass engine not available (needs glass.py + py3.10+)")
+@unittest.skipUnless(GLASS_OK, "pinned Glass checkout not present (run `tiresias glass --fetch`)")
 class TestEngineRoundtrip(unittest.TestCase):
     def test_commit_prove_verify_tamper(self):
         from tiresias.engine.commit import commit_dataset

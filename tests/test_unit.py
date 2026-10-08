@@ -527,5 +527,88 @@ class TestConfig(unittest.TestCase):
         self.assertIn("TIRESIAS_PORT", err.getvalue())
 
 
+class TestGlassPin(unittest.TestCase):
+    """Tiresias proves only with the Glass files it pins."""
+
+    def setUp(self):
+        from unittest import mock
+
+        from tiresias.engine import glass_pin
+
+        self.pin = glass_pin
+        self.tmp = tempfile.mkdtemp(prefix="tiresias-glass-")
+        os.makedirs(os.path.join(self.tmp, "examples", "prove"))
+        self.files = {"glass.py": b"MARKER = 'pinned'\n", "examples/prove/prove_pane.glass": b"0\n"}
+        for rel, data in self.files.items():
+            with open(os.path.join(self.tmp, rel), "wb") as f:
+                f.write(data)
+        import hashlib
+
+        pins = {rel: hashlib.sha256(data).hexdigest() for rel, data in self.files.items()}
+        self.patches = [
+            mock.patch.object(glass_pin, "PINNED_FILES", pins),
+            mock.patch.object(glass_pin, "_verified_root", None),
+            mock.patch.object(glass_pin, "_glass_module", None),
+            mock.patch.dict(os.environ, {"TIRESIAS_GLASS_DIR": self.tmp, "TIRESIAS_GLASS_UNPINNED": "0"}),
+        ]
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in reversed(self.patches):
+            p.stop()
+
+    def test_a_matching_checkout_is_accepted(self):
+        self.assertEqual(self.pin.mismatches(self.tmp), [])
+        self.assertEqual(self.pin.glass_root(), self.tmp)
+
+    def test_a_changed_file_is_refused_by_name(self):
+        with open(os.path.join(self.tmp, "examples", "prove", "prove_pane.glass"), "ab") as f:
+            f.write(b"# changed\n")
+        with self.assertRaises(self.pin.GlassPinError) as ctx:
+            self.pin.glass_root()
+        self.assertIn("prove_pane.glass", str(ctx.exception))
+
+    def test_unpinned_allows_a_changed_checkout(self):
+        from unittest import mock
+
+        with open(os.path.join(self.tmp, "glass.py"), "ab") as f:
+            f.write(b"# changed\n")
+        with mock.patch.dict(os.environ, {"TIRESIAS_GLASS_UNPINNED": "1"}):
+            self.assertEqual(self.pin.glass_root(), self.tmp)
+
+    def test_the_verified_file_is_loaded_even_if_another_glass_is_imported(self):
+        import sys
+        import types
+        from unittest import mock
+
+        impostor = types.ModuleType("glass")
+        impostor.MARKER = "impostor"
+        with mock.patch.dict(sys.modules, {"glass": impostor}):
+            self.assertEqual(self.pin.load_glass().MARKER, "pinned")
+
+    def test_fetch_clones_the_pinned_tag(self):
+        import shutil
+        import subprocess
+
+        if shutil.which("git") is None:
+            self.skipTest("git not installed")
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        for cmd in (["git", "init", "-q"], ["git", "add", "-A"], ["git", "commit", "-qm", "glass"], ["git", "tag", "v-test"]):
+            subprocess.run(cmd, cwd=self.tmp, check=True, env=env, capture_output=True)
+        target = os.path.join(tempfile.mkdtemp(prefix="tiresias-fetch-"), "glass", "v-test")
+        self.pin.fetch_release(target, repository=self.tmp, tag="v-test")
+        self.assertEqual(self.pin.mismatches(target), [])
+
+    def test_an_unreachable_release_is_a_clear_error(self):
+        import shutil
+
+        if shutil.which("git") is None:
+            self.skipTest("git not installed")
+        target = os.path.join(tempfile.mkdtemp(prefix="tiresias-fetch-"), "glass", "v-none")
+        with self.assertRaises(self.pin.GlassPinError):
+            self.pin.fetch_release(target, repository=os.path.join(self.tmp, "no-such-repo"), tag="v-none")
+
+
 if __name__ == "__main__":
     unittest.main()

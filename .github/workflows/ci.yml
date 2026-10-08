@@ -18,3 +18,10 @@ jobs:
         # The engine roundtrip test self-skips when the Glass engine isn't
         # present, so the fast suite runs cleanly in CI without it.
         run: python -m unittest tests.test_unit -v
+
+      - name: Engine round trip against the pinned Glass
+        # Fetches the Glass release pinned in tiresias/engine/glass_pin.py, verifies
+        # every file Tiresias reads against its SHA-256, and proves a real query.
+        run: |
+          tiresias glass --fetch
+          python -m unittest tests.test_engine -v

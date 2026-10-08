@@ -16,7 +16,8 @@ or unknown, and names each problem.
 | `TIRESIAS_PAGE_SIZE` | registry | `50` | Default page size for list endpoints. Range 1 to 10000. |
 | `TIRESIAS_MAX_PAGE_SIZE` | registry | `500` | Largest page size a client may ask for; at least PAGE_SIZE. Range 1 to 10000. |
 | `TIRESIAS_LOG_LEVEL` | registry | `INFO` | One of DEBUG, INFO, WARNING, ERROR, CRITICAL. |
-| `TIRESIAS_GLASS_DIR` | prover | `~/Desktop/Glass` | Where the Glass engine lives. Only the local prover reads it. |
+| `TIRESIAS_GLASS_DIR` | prover | (empty) | A Glass checkout to prove with. Empty means the pinned release, fetched to ~/.tiresias/glass/<tag> on first use. Either way it must match the pinned files. |
+| `TIRESIAS_GLASS_UNPINNED` | prover | `0` | 1 lets the prover use a Glass checkout that differs from the pinned files (development only). Range 0 to 1. |
 | `TIRESIAS_GAMMA` | prover | `918273645` | Public Fiat-Shamir point for dataset commitments. Keep it fixed for a dataset's lifetime. Range 2 to 2147483646. |
 | `TIRESIAS_REGISTRY_URL` | client | (empty) | Registry the client talks to. Empty means http://HOST:PORT. |
 | `TIRESIAS_API_KEY` | client | (empty) | The client's API key. |

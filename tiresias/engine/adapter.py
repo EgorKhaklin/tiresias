@@ -13,6 +13,7 @@ import os
 import sys
 from dataclasses import dataclass
 
+from tiresias.engine import glass_pin
 from tiresias.engine.drivers import (
     build_commit_driver,
     build_minmax_driver,
@@ -27,15 +28,11 @@ _glass = None
 def _load_glass():
     global _glass
     if _glass is None:
-        gd = glass_dir()
-        if gd not in sys.path:
-            sys.path.insert(0, gd)
         # Glass programs recurse deeply (lists, folds); the interpreter is
         # itself recursive, so lift Python's limit before running drivers.
         sys.setrecursionlimit(1_000_000)
-        import glass  # type: ignore
-
-        _glass = glass
+        # The verified checkout's glass.py, loaded by path.
+        _glass = glass_pin.load_glass()
     return _glass
 
 

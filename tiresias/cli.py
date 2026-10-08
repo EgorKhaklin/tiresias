@@ -101,6 +101,22 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_glass(args) -> int:
+    from tiresias.engine import glass_pin
+
+    if args.fetch:
+        try:
+            root = glass_pin.resolve(fetch=True)
+        except glass_pin.GlassPinError as e:
+            print(f"tiresias glass: {e}", file=sys.stderr)
+            return 1
+        print(f"fetched:  {root}")
+    for line in glass_pin.describe():
+        print(line)
+    root = glass_pin.resolve(fetch=False)
+    return 0 if root is not None and not glass_pin.mismatches(root) else 1
+
+
 def cmd_config(args) -> int:
     values, found = config.load()
     for s in config.SETTINGS:
@@ -250,6 +266,10 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--host", default=config.REGISTRY_HOST)
     sv.add_argument("--port", type=int, default=config.REGISTRY_PORT)
     sv.set_defaults(func=cmd_serve)
+
+    gl = sub.add_parser("glass", help="show the pinned Glass release and whether the checkout matches it")
+    gl.add_argument("--fetch", action="store_true", help="clone the pinned release if it is not present")
+    gl.set_defaults(func=cmd_glass)
 
     cf = sub.add_parser("config", help="print every setting's effective value; exit 1 on a problem")
     cf.set_defaults(func=cmd_config)

@@ -5,7 +5,7 @@ Tiresias stands on Glass, and the two are raised together as one temple. The ful
 | Stage | Temple part | For Tiresias |
 |---|---|---|
 | I | Euthynteria, the leveling course | The `tiresias` name in code, 1.0.0, a lean tree. Done. |
-| II | Stylobate, the platform | Glass as a pinned, installable dependency with a proving API, not a checkout path; registry settings validated at boot (done); release automation. |
+| II | Stylobate, the platform | Glass pinned by tag and SHA-256, fetched and verified (done); registry settings validated at boot (done); release automation (done). |
 | III | Peristyle, the columns | The engine, the privacy of the answer, the registry as a service (below). |
 | IV | Architrave, the beam | End to end on the audited backend with zero-knowledge, verified without the data. |
 | V | Frieze, the carved story | Docs, a ten-minute walkthrough, a design partner on notional data. |
