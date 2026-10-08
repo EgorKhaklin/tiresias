@@ -1,0 +1,54 @@
+name: release
+
+# Push a tag vX.Y.Z to publish a release. The job refuses a tag that does not
+# match the package version, the CLI's --version, or a CHANGELOG entry, and it
+# runs the unit tests before building.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: The tag matches the package and the CLI
+        run: |
+          pip install -e .
+          v=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, pyproject $v"; exit 1; }
+          test "$(tiresias --version)" = "tiresias $v" || { echo "tiresias --version says: $(tiresias --version)"; exit 1; }
+
+      - name: Unit tests
+        run: python -m unittest tests.test_unit
+
+      - name: Release notes from the changelog
+        env:
+          PROJECT: Tiresias
+        run: |
+          python .github/scripts/release_notes.py "$GITHUB_REF_NAME" > notes.md
+          python .github/scripts/release_notes.py "$GITHUB_REF_NAME" --title > title.txt
+
+      - name: Build the wheel and source distribution
+        run: |
+          pip install build
+          python -m build
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "$(cat title.txt)" --notes-file notes.md

@@ -12,6 +12,8 @@ Entries use the [Keep a Changelog](https://keepachangelog.com/) groups: Security
 
 - Every `TIRESIAS_*` setting is declared once with its type, range and reader. `tiresias serve` refuses to start on a malformed, out-of-range or unknown setting, or an admin token under 32 characters, and names each one; `tiresias config` prints the effective values; docs/configuration.md is generated from the declaration and a test keeps them equal.
 
+- Pushing a tag `vX.Y.Z` publishes a release: the job checks the tag against the package version, `tiresias --version` and the changelog, runs the unit tests, and attaches the wheel and source distribution with build-provenance attestations.
+
 ### Fixed
 
 - A malformed numeric setting, such as `TIRESIAS_PORT=abc`, raised a traceback on every command at import; it is now reported by name and the default is kept.
