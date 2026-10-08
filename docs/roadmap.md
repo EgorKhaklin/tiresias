@@ -35,7 +35,7 @@ A true average can still leak a person: two queries that differ by one row revea
 - [ ] Data holders sign their manifests (ML-DSA), so a commitment names who made it.
 - [ ] Versioned datasets: a new version does not invalidate proofs on the old one.
 - [ ] Operations: a structured audit log, a backup and restore drill, a Helm chart.
-- [ ] A security review: authentication, tenant isolation, rate limits, input bounds.
+- [x] A security review: authentication, tenant isolation, rate limits, input bounds (see SECURITY.md, Registry review).
 
 ## Wider questions
 

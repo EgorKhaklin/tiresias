@@ -610,5 +610,109 @@ class TestGlassPin(unittest.TestCase):
             self.pin.fetch_release(target, repository=os.path.join(self.tmp, "no-such-repo"), tag="v-none")
 
 
+class TestRegistryHttp(unittest.TestCase):
+    """The registry over real HTTP: malformed requests get a 4xx, never a hang or a leak."""
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        from http.server import ThreadingHTTPServer
+
+        from tiresias.registry import server
+
+        cls.server_mod = server
+        cls.saved = (server.STORE, server.RL, server.IP_RL)
+        cls.tmp = tempfile.mkdtemp(prefix="tiresias-http-")
+        server.STORE = Store(os.path.join(cls.tmp, "r.db"))
+        cls.org = server.STORE.create_org("Acme")
+        cls.key = server.STORE.issue_key(cls.org)
+        cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        cls.port = cls.httpd.server_address[1]
+        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+        cls.server_mod.STORE.close()
+        cls.server_mod.STORE, cls.server_mod.RL, cls.server_mod.IP_RL = cls.saved
+
+    def setUp(self):
+        from tiresias.registry.server import RateLimiter
+
+        self.server_mod.RL = RateLimiter(1000)
+        self.server_mod.IP_RL = RateLimiter(1000)
+
+    def request(self, method, path, headers=None, body=b""):
+        import http.client
+        import json as _json
+
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        try:
+            conn.putrequest(method, path)
+            for name, value in (headers or {}).items():
+                conn.putheader(name, value)
+            conn.endheaders()
+            if body:
+                conn.send(body)
+            resp = conn.getresponse()
+            raw = resp.read()
+            return resp.status, (_json.loads(raw) if raw else {}), raw
+        finally:
+            conn.close()
+
+    def auth(self, extra=None):
+        return {"Authorization": f"Bearer {self.key}", **(extra or {})}
+
+    def test_a_negative_content_length_is_rejected_without_reading(self):
+        status, payload, _ = self.request("POST", "/api/manifests", {"Content-Length": "-1"})
+        self.assertEqual(status, 400)
+        self.assertIn("negative", payload["error"])
+
+    def test_a_non_numeric_content_length_is_rejected(self):
+        status, _, _ = self.request("POST", "/api/manifests", {"Content-Length": "abc"})
+        self.assertEqual(status, 400)
+
+    def test_the_body_must_be_a_json_object(self):
+        body = b"[1, 2, 3]"
+        status, payload, _ = self.request(
+            "POST", "/api/manifests", self.auth({"Content-Length": str(len(body))}), body
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("JSON object", payload["error"])
+
+    def test_ids_must_be_short_word_strings(self):
+        import json as _json
+
+        body = _json.dumps({"dataset_id": ["x"], "commitment": 1, "gamma": 1, "schema": []}).encode()
+        status, payload, _ = self.request(
+            "POST", "/api/manifests", self.auth({"Content-Length": str(len(body))}), body
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("dataset_id", payload["error"])
+
+    def test_an_internal_error_reveals_only_an_id(self):
+        from unittest import mock
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("SECRET /var/lib/tiresias/registry.db")
+
+        with mock.patch.object(self.server_mod.STORE, "list_manifests", boom), \
+                self.assertLogs("tiresias.registry", level="ERROR"):
+            status, payload, raw = self.request("GET", "/api/manifests", self.auth())
+        self.assertEqual(status, 500)
+        self.assertEqual(payload["error"], "internal error")
+        self.assertRegex(payload["error_id"], r"^[0-9a-f]{16}$")
+        self.assertNotIn(b"SECRET", raw)
+        self.assertNotIn(b"RuntimeError", raw)
+
+    def test_public_share_lookups_are_limited_per_client(self):
+        from tiresias.registry.server import RateLimiter
+
+        self.server_mod.IP_RL = RateLimiter(2)
+        statuses = [self.request("GET", "/share/shr_unknown")[0] for _ in range(3)]
+        self.assertEqual(statuses, [404, 404, 429])
+
+
 if __name__ == "__main__":
     unittest.main()

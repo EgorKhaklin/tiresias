@@ -20,6 +20,13 @@ Entries use the [Keep a Changelog](https://keepachangelog.com/) groups: Security
 - Tiresias pins the Glass release it proves with, by tag and by the SHA-256 of the two Glass files it reads; it fetches that release on first use, refuses a checkout that differs and names the files, and loads the verified interpreter by path. `tiresias glass` shows the pin and the checkout; CI fetches the pinned Glass and runs the engine round trip.
 - Pushing a tag `vX.Y.Z` publishes a release: the job checks the tag against the package version, `tiresias --version` and the changelog, runs the unit tests, and attaches the wheel and source distribution with build-provenance attestations.
 
+### Security
+
+- A negative `Content-Length` passed the registry's size check and became an unbounded read; it, a non-numeric length, and a body that is not a JSON object are rejected with 400.
+- An unhandled registry error returned its exception text to the client; the client now gets an error id, and the trace is logged under it.
+- Public share lookups and admin routes are rate-limited per client address; before, only authenticated routes were limited.
+- Dataset and bundle ids must be 1 to 128 letters, digits or underscores.
+
 ### Changed
 
 - The package, command and settings are named `tiresias`: `python -m tiresias.demo`, the `tiresias` command, `TIRESIAS_*` environment variables, `~/.tiresias/registry.db`, `tir_live_` API keys, `tiresias_*` metrics.

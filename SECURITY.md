@@ -31,6 +31,18 @@ land, treat all "proofs" here as demonstrations of the *idea*, not guarantees.
 These are real engineering properties; they are independent of the
 (educational-grade) cryptographic strength above.
 
+## Registry review, October 2026
+
+What was checked in the registry (`tiresias/registry/`) and what changed:
+
+- **Authentication.** API keys are 256 random bits, shown once and stored as SHA-256 hashes; the admin token is compared in constant time and, when set, must be at least 32 characters or the registry refuses to start. No change.
+- **Tenant isolation.** Every store query that reads tenant data is scoped by the caller's organization, and a test asserts one organization cannot read another's manifests, bundles or keys. No change.
+- **Request bodies.** A negative `Content-Length` passed the size check and became an unbounded read; a non-numeric one, or a body that was not a JSON object, raised an unhandled error. All are now rejected with 400, and dataset and bundle ids must be strings of 1 to 128 letters, digits or underscores.
+- **Error responses.** An unhandled error returned its exception type and message, which can carry file paths, SQL or request content. The client now receives only an error id; the trace is in the server log under that id.
+- **Rate limits.** Authenticated routes were limited per organization; the public share lookups and the admin routes were not limited at all. They are now limited per client address, with the same per-minute budget.
+
+Known limits: the rate limiter is in memory and per process, so it does not span replicas; TLS is expected to terminate at a reverse proxy in front of the registry; failed authentication is not throttled separately, since a 256-bit key cannot be guessed.
+
 ## Reporting an issue
 
 This is a research/demonstration project. If you find a correctness or security

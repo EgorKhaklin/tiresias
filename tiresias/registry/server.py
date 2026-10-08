@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -38,6 +39,10 @@ _SHARE_VIEW = re.compile(r"^/v/([\w]+)$")
 _KEY_DEL = re.compile(r"^/api/keys/([\w]+)$")
 _ADMIN_ORG_KEYS = re.compile(r"^/api/admin/orgs/([\w]+)/keys$")
 _ADMIN_KEY_DEL = re.compile(r"^/api/admin/keys/([\w]+)$")
+
+# Dataset and bundle ids name database rows and URL path segments, so they are
+# held to the same alphabet the routes accept, with a bounded length.
+_ID = re.compile(r"^\w{1,128}$")
 
 _REQUIRED_MANIFEST = {"dataset_id", "commitment", "gamma", "schema"}
 _REQUIRED_BUNDLE = {"bundle_id", "dataset_id", "commitment", "gamma", "query", "result"}
@@ -74,6 +79,16 @@ class RateLimiter:
 
 
 RL = RateLimiter(config.RATE_PER_MIN)
+# The unauthenticated surfaces (public share lookups, admin routes) are limited per
+# client address instead, with the same per-minute budget.
+IP_RL = RateLimiter(config.RATE_PER_MIN)
+
+
+def _require_id(body: dict, field: str) -> str:
+    value = body.get(field)
+    if not isinstance(value, str) or not _ID.match(value):
+        raise ApiError(400, f"{field} must be 1 to 128 letters, digits or underscores")
+    return value
 
 
 def metrics_text() -> str:
@@ -225,6 +240,7 @@ def handle(
         missing = _REQUIRED_MANIFEST - set(body)
         if missing:
             raise ApiError(400, f"manifest missing fields: {sorted(missing)}")
+        _require_id(body, "dataset_id")
         STORE.put_manifest(org_id, body)
         STORE.audit(org_id, "manifest.register", body["dataset_id"])
         log.info("org=%s registered manifest %s", org_id, body["dataset_id"])
@@ -246,6 +262,8 @@ def handle(
         missing = _REQUIRED_BUNDLE - set(body)
         if missing:
             raise ApiError(400, f"bundle missing fields: {sorted(missing)}")
+        _require_id(body, "bundle_id")
+        _require_id(body, "dataset_id")
         manifest = STORE.get_manifest(org_id, body["dataset_id"])
         if not manifest:
             raise ApiError(400, "no manifest for this dataset_id; register it first")
@@ -318,16 +336,29 @@ class Handler(BaseHTTPRequestHandler):
         return org_id
 
     def _read_body(self) -> dict:
-        length = int(self.headers.get("Content-Length", 0))
+        # A negative length would pass the size check and turn into read(-1),
+        # which reads until the client closes the connection.
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            raise ApiError(400, "Content-Length must be an integer")
+        if length < 0:
+            raise ApiError(400, "Content-Length must not be negative")
         if length > config.MAX_BODY_BYTES:
             raise ApiError(413, "request body too large")
         if length == 0:
             return {}
         raw = self.rfile.read(length)
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
+            body = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
             raise ApiError(400, "body is not valid JSON")
+        if not isinstance(body, dict):
+            raise ApiError(400, "body must be a JSON object")
+        return body
+
+    def _client(self) -> str:
+        return "ip:" + str(self.client_address[0])
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
@@ -355,10 +386,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         m = _SHARE_GET.match(path)
         if m:
+            if not IP_RL.allow(self._client()):
+                self._json(429, {"error": "rate limit exceeded; slow down"})
+                return
             try:
                 self._json(200, public_share_payload(m.group(1)))
             except ApiError as e:
                 self._json(e.status, {"error": e.message})
+            except Exception:  # noqa: BLE001
+                self._internal_error("GET")
             return
         self._dispatch("GET")
 
@@ -375,6 +411,8 @@ class Handler(BaseHTTPRequestHandler):
             query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
             body = self._read_body()
             if path.startswith("/api/admin/"):
+                if not IP_RL.allow(self._client()):
+                    raise ApiError(429, "rate limit exceeded; slow down")
                 if not auth.admin_token_ok(self._bearer(), config.ADMIN_TOKEN):
                     raise ApiError(401, "admin token required (set TIRESIAS_ADMIN_TOKEN)")
                 code, payload = handle_admin(method, path, body)
@@ -386,9 +424,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json(code, payload)
         except ApiError as e:
             self._json(e.status, {"error": e.message})
-        except Exception as e:  # noqa: BLE001
-            log.exception("unhandled error on %s %s", method, self.path)
-            self._json(500, {"error": f"{type(e).__name__}: {e}"})
+        except Exception:  # noqa: BLE001
+            self._internal_error(method)
+
+    def _internal_error(self, method: str) -> None:
+        # The exception text can carry paths, SQL or request content, so the
+        # client gets only an id that finds the full trace in the server log.
+        error_id = secrets.token_hex(8)
+        log.exception("unhandled error %s on %s %s", error_id, method, self.path)
+        self._json(500, {"error": "internal error", "error_id": error_id})
 
     def log_message(self, format, *args) -> None:
         pass  # logging handled explicitly
