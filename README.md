@@ -43,7 +43,8 @@ The demo commits a payroll, proves `AVG(salary) WHERE dept = 'eng'`, verifies th
 ### The registry, in five commands
 
 ```bash
-TIRESIAS_ADMIN_TOKEN=secret tiresias serve                  # 1. run the registry
+export TIRESIAS_ADMIN_TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+tiresias serve                                              # 1. run the registry
 tiresias create-org "Acme Health"                           # 2. a tenant and its API key
 TIRESIAS_API_KEY=tir_live_... tiresias remote-commit payroll.csv --types "dept=category,remote=bool"
                                                             # 3. commit locally, upload the manifest
@@ -97,9 +98,11 @@ tiresias/
   sdk.py       an embeddable engine
   cli.py       the `tiresias` command
 deploy/        a container image and compose file for the registry (no Glass inside)
-docs/          the HTTP API and the roadmap
+docs/          the HTTP API, configuration, and the roadmap
 tests/         unit tests and an engine round trip
 ```
+
+Every setting is a `TIRESIAS_*` environment variable, listed in [configuration](docs/configuration.md); `tiresias serve` refuses to start on a malformed, weak or unknown one.
 
 ```bash
 python3.12 -m unittest discover -s tests     # unit tests, plus an engine round trip when Glass is present

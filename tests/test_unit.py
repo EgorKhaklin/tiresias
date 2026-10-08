@@ -466,5 +466,66 @@ class TestShares(unittest.TestCase):
             self.server.public_share_payload("shr_does_not_exist")
 
 
+class TestConfig(unittest.TestCase):
+    """Every setting is declared once; a bad one is named, never a traceback."""
+
+    def setUp(self):
+        from tiresias import config
+        self.config = config
+
+    def test_defaults_have_no_problems(self):
+        values, found = self.config.load({})
+        self.assertEqual(found, [])
+        self.assertEqual(values["PORT"], 8765)
+        self.assertEqual(values["REGISTRY_URL"], "http://127.0.0.1:8765")
+
+    def test_malformed_and_out_of_range_values_are_named_and_defaulted(self):
+        values, found = self.config.load({"TIRESIAS_PORT": "abc", "TIRESIAS_RATE_PER_MIN": "-1"})
+        self.assertEqual(values["PORT"], 8765)
+        self.assertEqual(values["RATE_PER_MIN"], 240)
+        self.assertTrue(any(p.startswith("TIRESIAS_PORT:") for p in found))
+        self.assertTrue(any(p.startswith("TIRESIAS_RATE_PER_MIN:") for p in found))
+
+    def test_admin_token_must_be_empty_or_strong(self):
+        _, weak = self.config.load({"TIRESIAS_ADMIN_TOKEN": "secret"})
+        _, strong = self.config.load({"TIRESIAS_ADMIN_TOKEN": "x" * 32})
+        self.assertTrue(any("ADMIN_TOKEN" in p for p in weak))
+        self.assertEqual(strong, [])
+
+    def test_unknown_setting_is_a_problem(self):
+        _, found = self.config.load({"TIRESIAS_ADMN_TOKEN": "typo"})
+        self.assertEqual(found, ["TIRESIAS_ADMN_TOKEN: not a Tiresias setting (a typo?)"])
+
+    def test_page_size_ordering(self):
+        _, found = self.config.load({"TIRESIAS_PAGE_SIZE": "600", "TIRESIAS_MAX_PAGE_SIZE": "500"})
+        self.assertTrue(any("MAX_PAGE_SIZE" in p for p in found))
+
+    def test_problems_are_scoped_to_their_reader(self):
+        env = {"TIRESIAS_GAMMA": "1"}
+        self.assertEqual(self.config.problems(env, scope="registry"), [])
+        self.assertEqual(len(self.config.problems(env, scope="prover")), 1)
+
+    def test_gamma_bound_matches_the_commitment_field(self):
+        from tiresias.engine.schema import FIELD_PRIME
+        self.assertEqual(self.config._FIELD_PRIME, FIELD_PRIME)
+
+    def test_configuration_doc_is_generated_from_the_schema(self):
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "configuration.md")
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), self.config.render_markdown(),
+                             "docs/configuration.md is stale; regenerate it from tiresias.config.render_markdown()")
+
+    def test_serve_refuses_to_start_on_a_bad_setting(self):
+        import io
+        from contextlib import redirect_stderr
+        from unittest import mock
+        from tiresias import cli
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {"TIRESIAS_PORT": "not-a-port"}), redirect_stderr(err):
+            rc = cli.main(["serve"])
+        self.assertEqual(rc, 2)
+        self.assertIn("TIRESIAS_PORT", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

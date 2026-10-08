@@ -87,10 +87,29 @@ def cmd_demo(args) -> int:
 
 
 def cmd_serve(args) -> int:
+    # Validate before importing the server: importing it opens the database.
+    found = config.problems(scope="registry")
+    if found:
+        print("tiresias serve: refusing to start until these settings are fixed:", file=sys.stderr)
+        for problem in found:
+            print(f"  {problem}", file=sys.stderr)
+        print("`tiresias config` lists every setting with its default.", file=sys.stderr)
+        return 2
     from tiresias.registry.server import serve
 
     serve(args.host, args.port)
     return 0
+
+
+def cmd_config(args) -> int:
+    values, found = config.load()
+    for s in config.SETTINGS:
+        value = values[s.name]
+        shown = ("(set, hidden)" if value else "(empty)") if s.kind == "secret" else str(value)
+        print(f"{s.env:<26} {shown}")
+    for problem in found:
+        print(f"problem: {problem}")
+    return 1 if found else 0
 
 
 def cmd_create_org(args) -> int:
@@ -231,6 +250,9 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--host", default=config.REGISTRY_HOST)
     sv.add_argument("--port", type=int, default=config.REGISTRY_PORT)
     sv.set_defaults(func=cmd_serve)
+
+    cf = sub.add_parser("config", help="print every setting's effective value; exit 1 on a problem")
+    cf.set_defaults(func=cmd_config)
 
     co = sub.add_parser("create-org", help="provision an org + issue an API key")
     co.add_argument("name")
