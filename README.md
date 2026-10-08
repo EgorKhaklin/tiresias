@@ -66,6 +66,8 @@ SELECT dept, SUM(salary) GROUP BY dept          -- each group proven
 
 Filters: `=`, `!=`, `<`, `>`, `<=`, `>=`, joined by `AND` and `OR`. Columns are integers, booleans, or categories (labels mapped to codes in the public manifest).
 
+Every answer carries a proven count of the rows it describes, its cohort. A dataset declares a minimum cohort when it is committed (`--min-cohort`, default 5): a query about fewer rows is refused, and a `GROUP BY` group below it is suppressed and listed by label only. The policy is part of the dataset's id, so it cannot be loosened quietly.
+
 <picture><source media="(prefers-color-scheme: dark)" srcset="assets/rule-dark.svg"><img src="assets/rule-light.svg" width="100%" alt=""></picture>
 
 ## What a proof buys you today
@@ -85,7 +87,7 @@ Limits it enforces rather than hides:
 - A `SUM`, `AVG` or `GROUP BY` total must stay below the field; one that would overflow is refused instead of proven wrapped.
 - `GROUP BY` keys are categories.
 
-The next stages move Tiresias onto Glass's sound 64-bit path with a witness-free verifier, then onto an audited proving backend with zero-knowledge, and add protection for the answers themselves (minimum group sizes, query auditing). See the [roadmap](docs/roadmap.md).
+The next stages move Tiresias onto Glass's sound 64-bit path with a witness-free verifier, then onto an audited proving backend with zero-knowledge, and add more protection for the answers themselves (query auditing against differencing, a privacy budget). See the [roadmap](docs/roadmap.md).
 
 ## Layout
 

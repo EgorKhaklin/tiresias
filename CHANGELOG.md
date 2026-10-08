@@ -17,6 +17,7 @@ Entries use the [Keep a Changelog](https://keepachangelog.com/) groups: Security
 - A multi-tenant registry that never sees a row: API keys, tenant isolation, rate limits, an audit log, Prometheus metrics, and a public verification link that needs no account.
 - A local prover and registry client, so proving runs where the data lives; an embeddable SDK; a container image for the registry.
 - Every `TIRESIAS_*` setting is declared once with its type, range and reader. `tiresias serve` refuses to start on a malformed, out-of-range or unknown setting, or an admin token under 32 characters, and names each one; `tiresias config` prints the effective values; docs/configuration.md is generated from the declaration and a test keeps them equal.
+- Every answer carries a proven count of the rows it describes. A dataset declares a minimum cohort at commit (`--min-cohort`, default 5, part of the dataset id); a query about fewer rows is refused, a `GROUP BY` group below it is suppressed and listed by label, and the registry rejects any bundle that breaks the policy.
 - Tiresias pins the Glass release it proves with, by tag and by the SHA-256 of the two Glass files it reads; it fetches that release on first use, refuses a checkout that differs and names the files, and loads the verified interpreter by path. `tiresias glass` shows the pin and the checkout; CI fetches the pinned Glass and runs the engine round trip.
 - Pushing a tag `vX.Y.Z` publishes a release: the job checks the tag against the package version, `tiresias --version` and the changelog, runs the unit tests, and attaches the wheel and source distribution with build-provenance attestations.
 
@@ -38,6 +39,8 @@ Entries use the [Keep a Changelog](https://keepachangelog.com/) groups: Security
 
 ### Fixed
 
+- Reproducible verification of an `AVG` re-proved its sum but not its count, so a bundle with a consistently forged count and average passed; the count is now re-proved.
+- The demo, the registry landing page and the web UI called each answer's proof zero-knowledge; a bundle carries the proof's verdict bound to the commitment, and checking the proof itself still needs the data.
 - The proving field was described as Baby Bear; the query path uses the 31-bit prime 2^31 − 1.
 - The test suite wrote its registry database into the home directory; it uses a temporary directory.
 - A malformed numeric setting, such as `TIRESIAS_PORT=abc`, raised a traceback on every command at import; it is now reported by name and the default is kept.

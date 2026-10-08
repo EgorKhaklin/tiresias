@@ -69,10 +69,21 @@ curl -H "Authorization: Bearer $KEY" \
 curl http://localhost:8765/share/<token>
 ```
 
+## Bundles and cohorts
+
+A manifest carries `min_cohort`, the fewest rows an answer may describe. A bundle's
+`result` carries the proven size of the cohort it describes: `cohort` for `SUM`,
+`COUNT`, `MIN`, `MAX` and `AVG` (where it equals `count`), and for `GROUP BY` a
+`cohorts` map beside `groups`, plus `suppressed`, the labels of groups below the
+floor. A bundle whose cohort is missing or below `min_cohort`, or whose groups and
+suppressed labels do not cover the category list exactly, fails verification.
+
 ## Errors
 
 JSON `{"error": "..."}` with HTTP `400` (bad request), `401` (auth), `404`
-(not found), `413` (too large), `429` (rate limited), `500` (server).
+(not found), `413` (too large), `429` (rate limited). A `500` carries only
+`{"error": "internal error", "error_id": "..."}`; the details are in the server
+log under that id.
 
 ## Programmatic use
 

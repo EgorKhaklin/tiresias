@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from tiresias.client.registry_client import RegistryClient
-from tiresias.engine.commit import Manifest, commit_dataset, load_aligned
+from tiresias.engine.commit import DEFAULT_MIN_COHORT, Manifest, commit_dataset, load_aligned
 from tiresias.engine.prover import prove
 from tiresias.engine.schema import ColType, Dataset
 from tiresias.query import sql
@@ -22,9 +22,10 @@ def commit_and_register(
     name: str,
     gamma: int,
     client: RegistryClient,
+    min_cohort: int = DEFAULT_MIN_COHORT,
 ) -> Manifest:
     ds = Dataset.from_csv(csv_path, types)
-    manifest = commit_dataset(ds, name=name, gamma=gamma)
+    manifest = commit_dataset(ds, name=name, gamma=gamma, min_cohort=min_cohort)
     client.register_manifest(asdict(manifest))
     return manifest
 

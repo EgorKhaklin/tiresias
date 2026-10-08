@@ -23,6 +23,11 @@ SAFE_VALUE_MAX = FIELD_PRIME // 2
 RANGE_MAX = 65536
 
 
+class CohortTooSmall(ValueError):
+    """The query describes fewer rows than the dataset's minimum cohort, so its
+    answer could single someone out. Refused rather than proven."""
+
+
 class TiresiasRangeError(ValueError):
     """A comparison (MIN/MAX or < / >) was requested on values that exceed the
     educational comparison gadget's range."""

@@ -108,6 +108,17 @@ class QuerySpec:
             walk(self.predicate)
         return cols
 
+    def cohort_query(self, table: Table) -> Query:
+        """COUNT(*) over the rows this query's aggregate describes."""
+        return CountQ(self._wrap(table))
+
+    def group_cohort_query(self, table: Table, code: int) -> Query:
+        """COUNT(*) over one group's rows (group_key == code, AND any base predicate)."""
+        assert self.group_key is not None
+        eq: PExpr = EqE(Col(self.group_key), LitI(code))
+        pred: PExpr = AndE(self.predicate, eq) if self.predicate is not None else eq
+        return CountQ(Where(pred, From(table)))
+
     def avg_parts(self, table: Table) -> tuple[Query, Query]:
         """AVG is proven as two queries: SUM(col) and COUNT(*) over the same rows."""
         assert self.column is not None

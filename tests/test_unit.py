@@ -281,14 +281,14 @@ class TestRegistryHandle(unittest.TestCase):
     def _manifest_dict(self):
         return {
             "dataset_id": "ds_x", "name": "x", "commitment": 514343249,
-            "gamma": 918273645, "schema": [], "row_count": 8, "created_at": time.time(),
+            "gamma": 918273645, "schema": [{"name": "salary", "type": "int", "categories": {}}], "row_count": 8, "created_at": time.time(),
             "engine_version": "t", "crypto_grade": "educational", "disclosure": "d",
         }
 
     def _bundle_dict(self, commitment=514343249):
         return {
             "bundle_id": "pb_x", "dataset_id": "ds_x", "commitment": commitment,
-            "gamma": 918273645, "query": "SELECT SUM(salary)", "result": {"value": 350000},
+            "gamma": 918273645, "query": "SELECT SUM(salary)", "result": {"value": 350000, "cohort": 8},
             "accepted": True, "created_at": time.time(), "engine_version": "t",
             "crypto_grade": "educational", "disclosure": "d",
         }
@@ -436,12 +436,12 @@ class TestShares(unittest.TestCase):
         self.org = server.STORE.create_org("Acme")
         man = {
             "dataset_id": "ds_x", "name": "x", "commitment": 514343249,
-            "gamma": 918273645, "schema": [], "row_count": 8, "created_at": time.time(),
+            "gamma": 918273645, "schema": [{"name": "salary", "type": "int", "categories": {}}], "row_count": 8, "created_at": time.time(),
             "engine_version": "t", "crypto_grade": "educational", "disclosure": "d",
         }
         bundle = {
             "bundle_id": "pb_x", "dataset_id": "ds_x", "commitment": 514343249,
-            "gamma": 918273645, "query": "SELECT SUM(salary)", "result": {"value": 350000},
+            "gamma": 918273645, "query": "SELECT SUM(salary)", "result": {"value": 350000, "cohort": 8},
             "accepted": True, "created_at": time.time(), "engine_version": "t",
             "crypto_grade": "educational", "disclosure": "d",
         }
@@ -712,6 +712,66 @@ class TestRegistryHttp(unittest.TestCase):
         self.server_mod.IP_RL = RateLimiter(2)
         statuses = [self.request("GET", "/share/shr_unknown")[0] for _ in range(3)]
         self.assertEqual(statuses, [404, 404, 429])
+
+
+class TestCohortPolicy(unittest.TestCase):
+    """Tier 1 checks, from public data alone, that every answer meets min_cohort."""
+
+    def manifest(self, k=5):
+        return Manifest(
+            dataset_id="ds_c", name="c",
+            schema=[
+                {"name": "dept", "type": "category", "categories": {"eng": 0, "ops": 1}},
+                {"name": "salary", "type": "int", "categories": {}},
+            ],
+            gamma=918273645, commitment=7, row_count=12, created_at=0.0, min_cohort=k,
+        )
+
+    def bundle(self, query, result):
+        from tiresias.engine.bundle import ProofBundle
+
+        return ProofBundle(
+            bundle_id="pb_c", dataset_id="ds_c", commitment=7, gamma=918273645,
+            query=query, result=result, accepted=True, created_at=0.0,
+        )
+
+    def tier1(self, query, result, k=5):
+        from tiresias.engine.verify import verify_bundle
+
+        return verify_bundle(self.bundle(query, result), self.manifest(k))
+
+    def test_a_large_enough_cohort_passes(self):
+        self.assertTrue(self.tier1("SELECT SUM(salary)", {"value": 10, "cohort": 5}).ok)
+
+    def test_a_small_or_missing_cohort_fails(self):
+        self.assertFalse(self.tier1("SELECT SUM(salary)", {"value": 10, "cohort": 4}).ok)
+        self.assertFalse(self.tier1("SELECT SUM(salary)", {"value": 10}).ok)
+
+    def test_a_count_must_equal_its_cohort(self):
+        self.assertTrue(self.tier1("SELECT COUNT(*)", {"value": 6, "cohort": 6}).ok)
+        self.assertFalse(self.tier1("SELECT COUNT(*)", {"value": 6, "cohort": 9}).ok)
+
+    def test_group_by_must_partition_the_categories(self):
+        q = "SELECT dept, SUM(salary) GROUP BY dept"
+        good = {"group_by": "dept", "column": "salary", "groups": {"eng": 50},
+                "cohorts": {"eng": 7}, "suppressed": ["ops"]}
+        self.assertTrue(self.tier1(q, good).ok)
+        dropped = dict(good, suppressed=[])  # ops silently missing
+        self.assertFalse(self.tier1(q, dropped).ok)
+        small = dict(good, cohorts={"eng": 2})
+        self.assertFalse(self.tier1(q, small).ok)
+
+    def test_the_policy_is_part_of_the_dataset_id(self):
+        from tiresias.engine.commit import _dataset_id
+
+        schema = self.manifest().schema
+        self.assertNotEqual(_dataset_id(schema, 7, 5), _dataset_id(schema, 7, 3))
+
+    def test_min_cohort_must_be_positive(self):
+        from tiresias.engine.commit import commit_dataset
+
+        with self.assertRaises(ValueError):
+            commit_dataset(Dataset(columns=[]), name="x", gamma=1, min_cohort=0)
 
 
 if __name__ == "__main__":

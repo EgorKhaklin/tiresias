@@ -26,7 +26,7 @@ from tiresias import config
 from tiresias.client.local_prover import commit_and_register, query_and_submit
 from tiresias.client.registry_client import RegistryClient
 from tiresias.engine.bundle import ProofBundle
-from tiresias.engine.commit import Manifest, commit_dataset
+from tiresias.engine.commit import DEFAULT_MIN_COHORT, Manifest, commit_dataset
 from tiresias.engine.prover import prove as _prove
 from tiresias.engine.schema import ColType, Dataset  # re-exported for convenience
 from tiresias.engine.verify import VerifyResult, verify_bundle
@@ -42,10 +42,14 @@ class LocalEngine:
         self.gamma = gamma
 
     def commit_csv(
-        self, path: str, types: dict[str, ColType], name: str = "dataset"
+        self,
+        path: str,
+        types: dict[str, ColType],
+        name: str = "dataset",
+        min_cohort: int = DEFAULT_MIN_COHORT,
     ) -> tuple[Dataset, Manifest]:
         ds = Dataset.from_csv(path, types)
-        return ds, commit_dataset(ds, name=name, gamma=self.gamma)
+        return ds, commit_dataset(ds, name=name, gamma=self.gamma, min_cohort=min_cohort)
 
     def query(self, dataset: Dataset, sql_text: str, manifest: Manifest) -> ProofBundle:
         return _prove(dataset, sql.parse(sql_text, manifest), manifest)

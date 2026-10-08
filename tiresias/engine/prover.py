@@ -9,6 +9,7 @@ from tiresias.engine.adapter import prove_minmax_query, prove_query
 from tiresias.engine.bundle import ProofBundle, make_bundle_id
 from tiresias.engine.commit import Manifest
 from tiresias.engine.schema import (
+    CohortTooSmall,
     Dataset,
     FIELD_PRIME,
     TiresiasFieldError,
@@ -76,41 +77,77 @@ def _check_field_capacity(dataset: Dataset, spec: QuerySpec) -> None:
         )
 
 
+def _require_cohort(cohort: int, manifest: Manifest) -> None:
+    if cohort < manifest.min_cohort:
+        raise CohortTooSmall(
+            f"the query describes {cohort} rows; this dataset answers only about "
+            f"cohorts of at least {manifest.min_cohort}"
+        )
+
+
 def prove(dataset: Dataset, spec: QuerySpec, manifest: Manifest) -> ProofBundle:
+    """Prove the answer to `spec`, and the size of the cohort it describes.
+
+    Every answer carries a proven COUNT over the same rows. An answer about fewer
+    rows than the manifest's min_cohort is refused; in GROUP BY, such groups are
+    suppressed and only their labels are listed.
+    """
     _check_ranges(dataset, spec)
     _check_field_capacity(dataset, spec)
     table = dataset.to_pane_table()
     gamma = manifest.gamma
 
-    if spec.agg in (AGG_SUM, AGG_COUNT):
+    if spec.agg == AGG_COUNT:
         res = prove_query(spec.to_pane_query(table), gamma)
-        result = {"value": res.result}
+        _require_cohort(res.result, manifest)
+        result = {"value": res.result, "cohort": res.result}
         accepted = res.accepted
         commitment = res.commitment
-    elif spec.agg in (AGG_MIN, AGG_MAX):
-        res = prove_minmax_query(spec.to_pane_query(table), gamma)
-        result = {"value": res.result}
-        accepted = res.accepted
+    elif spec.agg in (AGG_SUM, AGG_MIN, AGG_MAX):
+        rc = prove_query(spec.cohort_query(table), gamma)
+        _require_cohort(rc.result, manifest)
+        if spec.agg == AGG_SUM:
+            res = prove_query(spec.to_pane_query(table), gamma)
+        else:
+            res = prove_minmax_query(spec.to_pane_query(table), gamma)
+        result = {"value": res.result, "cohort": rc.result}
+        accepted = res.accepted and rc.accepted
         commitment = res.commitment
     elif spec.agg == AGG_AVG:
         sumq, countq = spec.avg_parts(table)
-        rs = prove_query(sumq, gamma)
         rc = prove_query(countq, gamma)
+        _require_cohort(rc.result, manifest)
+        rs = prove_query(sumq, gamma)
         avg = rs.result // rc.result if rc.result else 0
-        result = {"sum": rs.result, "count": rc.result, "avg": avg}
+        result = {"sum": rs.result, "count": rc.result, "avg": avg, "cohort": rc.result}
         accepted = rs.accepted and rc.accepted
         commitment = rs.commitment
     elif spec.agg == AGG_GROUPBY:
-        # one filtered-SUM proof per category; the table commitment is shared.
+        # Per category: a proven COUNT, then the SUM only if the group is large
+        # enough. The table commitment is shared by every proof.
         groups: dict[str, int] = {}
+        cohorts: dict[str, int] = {}
+        suppressed: list[str] = []
         accepted = True
         commitment = None
         for label, code in _groups_of(manifest, spec.group_key):
+            rc = prove_query(spec.group_cohort_query(table, code), gamma)
+            accepted = accepted and rc.accepted
+            commitment = rc.commitment
+            if rc.result < manifest.min_cohort:
+                suppressed.append(label)
+                continue
             r = prove_query(spec.group_query(table, code), gamma)
             groups[label] = r.result
+            cohorts[label] = rc.result
             accepted = accepted and r.accepted
-            commitment = r.commitment
-        result = {"group_by": spec.group_key, "column": spec.column, "groups": groups}
+        result = {
+            "group_by": spec.group_key,
+            "column": spec.column,
+            "groups": groups,
+            "cohorts": cohorts,
+            "suppressed": suppressed,
+        }
         if commitment is None:
             raise ValueError("GROUP BY produced no groups (empty category set)")
     else:

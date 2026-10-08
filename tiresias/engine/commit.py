@@ -21,6 +21,10 @@ from tiresias.engine.schema import Column, ColType, Dataset
 ENGINE_VERSION = f"tiresias-{__version__} / glass-pane"
 CRYPTO_GRADE = "educational"  # per Glass docs/security/soundness.md: not production crypto
 
+# The smallest number of rows an answer may describe. An aggregate over one or two
+# rows is that person's value; five is a common floor for published statistics.
+DEFAULT_MIN_COHORT = 5
+
 
 @dataclass
 class Manifest:
@@ -31,6 +35,8 @@ class Manifest:
     commitment: int  # binding fingerprint of the private rows
     row_count: int
     created_at: float
+    # Answers must describe at least this many rows; proven with every answer.
+    min_cohort: int = DEFAULT_MIN_COHORT
     engine_version: str = ENGINE_VERSION
     crypto_grade: str = CRYPTO_GRADE
     # Honest disclosure surfaced on every public artifact.
@@ -85,24 +91,31 @@ def load_aligned(path: str, manifest: Manifest) -> Dataset:
     return ds
 
 
-def _dataset_id(schema: list[dict], commitment: int) -> str:
-    blob = json.dumps(schema, sort_keys=True) + f"|{commitment}"
+def _dataset_id(schema: list[dict], commitment: int, min_cohort: int) -> str:
+    # The cohort policy is part of the identity, so re-registering the same rows
+    # under a laxer policy yields a different dataset, not a quiet change.
+    blob = json.dumps(schema, sort_keys=True) + f"|{commitment}|{min_cohort}"
     return "ds_" + hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
-def commit_dataset(dataset: Dataset, name: str, gamma: int) -> Manifest:
+def commit_dataset(
+    dataset: Dataset, name: str, gamma: int, min_cohort: int = DEFAULT_MIN_COHORT
+) -> Manifest:
     """Run the Glass engine to commit the dataset, returning its public manifest."""
+    if min_cohort < 1:
+        raise ValueError("min_cohort must be at least 1")
     commitment = commit_table(dataset.to_pane_table(), gamma)
     schema = [
         {"name": c.name, "type": c.type.value, "categories": dict(c.categories)}
         for c in dataset.columns
     ]
     return Manifest(
-        dataset_id=_dataset_id(schema, commitment),
+        dataset_id=_dataset_id(schema, commitment, min_cohort),
         name=name,
         schema=schema,
         gamma=gamma,
         commitment=commitment,
         row_count=len(dataset.rows),
         created_at=time.time(),
+        min_cohort=min_cohort,
     )

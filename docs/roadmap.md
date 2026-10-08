@@ -24,7 +24,7 @@ Tiresias proves today through Glass's older query path: a 31-bit field (2^31 −
 
 A true average can still leak a person: two queries that differ by one row reveal that row.
 
-- [ ] A minimum cohort size: no aggregate over fewer than k rows, with the count bound in the proof.
+- [x] A minimum cohort size: every answer carries a proven cohort; queries below the dataset's floor are refused, small `GROUP BY` groups suppressed, and the registry rejects bundles that break the policy.
 - [ ] Query auditing against differencing, per dataset.
 - [ ] A per-dataset privacy budget, with optional differential-privacy noise whose sampling is proven.
 - [ ] A written privacy model beside the soundness model.

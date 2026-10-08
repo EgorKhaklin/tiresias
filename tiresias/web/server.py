@@ -81,7 +81,9 @@ def api_sample(_body: dict) -> dict:
 
 def api_commit(body: dict) -> dict:
     ds = _dataset_from_csv_text(body["csv"], _parse_types(body.get("types", "")))
-    manifest = commit_dataset(ds, name=body.get("name", "dataset"), gamma=GAMMA)
+    # The bundled sample is 8 rows, so the local demo UI uses a floor of 3 unless asked.
+    min_cohort = int(body.get("min_cohort", 3))
+    manifest = commit_dataset(ds, name=body.get("name", "dataset"), gamma=GAMMA, min_cohort=min_cohort)
     _datasets[manifest.dataset_id] = (manifest, ds)
     return {"manifest": asdict(manifest)}
 

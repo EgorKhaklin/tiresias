@@ -16,7 +16,7 @@ import os
 import sys
 
 from tiresias import config
-from tiresias.engine.commit import commit_dataset, load_aligned, Manifest
+from tiresias.engine.commit import DEFAULT_MIN_COHORT, Manifest, commit_dataset, load_aligned
 from tiresias.engine.prover import prove
 from tiresias.engine.schema import ColType, Dataset
 from tiresias.engine.verify import verify_bundle
@@ -39,7 +39,7 @@ def _parse_types(s: str | None) -> dict[str, ColType]:
 
 def cmd_commit(args) -> int:
     ds = Dataset.from_csv(args.csv, _parse_types(args.types))
-    manifest = commit_dataset(ds, name=args.name, gamma=args.gamma)
+    manifest = commit_dataset(ds, name=args.name, gamma=args.gamma, min_cohort=args.min_cohort)
     out = args.out or f"{manifest.dataset_id}.manifest.json"
     manifest.save(out)
     schema = ", ".join(f"{c['name']}:{c['type']}" for c in manifest.schema)
@@ -47,6 +47,7 @@ def cmd_commit(args) -> int:
     print(f"  dataset_id : {manifest.dataset_id}")
     print(f"  commitment : {manifest.commitment}")
     print(f"  schema     : {schema}")
+    print(f"  min cohort : {manifest.min_cohort} rows per answer")
     print(f"  crypto     : {manifest.crypto_grade}")
     return 0
 
@@ -155,11 +156,13 @@ def cmd_remote_commit(args) -> int:
     from tiresias.client.local_prover import commit_and_register
 
     manifest = commit_and_register(
-        args.csv, _parse_types(args.types), args.name, args.gamma, _client(args)
+        args.csv, _parse_types(args.types), args.name, args.gamma, _client(args),
+        min_cohort=args.min_cohort,
     )
-    print(f"committed locally and registered (rows never left this machine):")
+    print("committed locally and registered (rows never left this machine):")
     print(f"  dataset_id : {manifest.dataset_id}")
     print(f"  commitment : {manifest.commitment}")
+    print(f"  min cohort : {manifest.min_cohort} rows per answer")
     return 0
 
 
@@ -243,6 +246,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--name", default="dataset")
     c.add_argument("--types", help="col=type,... (int|bool|category)")
     c.add_argument("--gamma", type=int, default=DEFAULT_GAMMA)
+    c.add_argument("--min-cohort", type=int, default=DEFAULT_MIN_COHORT,
+                    help="refuse answers about fewer rows (default %(default)s)")
     c.add_argument("-o", "--out")
     c.set_defaults(func=cmd_commit)
 
@@ -286,6 +291,8 @@ def build_parser() -> argparse.ArgumentParser:
     rc.add_argument("--name", default="dataset")
     rc.add_argument("--types", help="col=type,... (int|bool|category)")
     rc.add_argument("--gamma", type=int, default=DEFAULT_GAMMA)
+    rc.add_argument("--min-cohort", type=int, default=DEFAULT_MIN_COHORT,
+                    help="refuse answers about fewer rows (default %(default)s)")
     rc.add_argument("--registry", help=f"default {config.REGISTRY_URL}")
     rc.add_argument("--key", help="API key (or set TIRESIAS_API_KEY)")
     rc.set_defaults(func=cmd_remote_commit)
@@ -325,13 +332,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
-    from tiresias.engine.schema import TiresiasRangeError
+    from tiresias.engine.schema import CohortTooSmall, TiresiasRangeError
     from tiresias.query.sql import SqlError
 
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (SqlError, TiresiasRangeError) as e:
+    except (SqlError, TiresiasRangeError, CohortTooSmall) as e:
         print(f"query error: {e}", file=sys.stderr)
         return 2
     except Exception as e:  # surface a clean message, not a traceback

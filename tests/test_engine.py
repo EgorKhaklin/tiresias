@@ -47,7 +47,7 @@ class TestEngineRoundtrip(unittest.TestCase):
         for dept, sal in [("eng", 100), ("sales", 90), ("eng", 150)]:
             ds.rows.append([ds.columns[0].encode(dept), ds.columns[1].encode(sal)])
 
-        manifest = commit_dataset(ds, name="t", gamma=918273645)
+        manifest = commit_dataset(ds, name="t", gamma=918273645, min_cohort=2)
         spec = sql.parse("SELECT SUM(salary) WHERE dept = 'eng'", manifest)
         bundle = prove(ds, spec, manifest)
 
@@ -65,6 +65,62 @@ class TestEngineRoundtrip(unittest.TestCase):
         forged = copy.deepcopy(bundle)
         forged.result["value"] = 999
         self.assertFalse(verify_bundle(forged, manifest, dataset=ds).ok)
+
+
+def _payroll():
+    from tiresias.engine.schema import Column, ColType, Dataset
+
+    ds = Dataset(columns=[Column("dept", ColType.CATEGORY), Column("salary", ColType.INT)], rows=[])
+    for dept, sal in [("eng", 100), ("eng", 150), ("eng", 200), ("sales", 90)]:
+        ds.rows.append([ds.columns[0].encode(dept), ds.columns[1].encode(sal)])
+    return ds
+
+
+@unittest.skipUnless(GLASS_OK, "pinned Glass checkout not present (run `tiresias glass --fetch`)")
+class TestEngineCohorts(unittest.TestCase):
+    def setUp(self):
+        from tiresias.engine.commit import commit_dataset
+
+        self.ds = _payroll()
+        self.manifest = commit_dataset(self.ds, name="p", gamma=918273645, min_cohort=2)
+
+    def test_a_query_about_too_few_rows_is_refused(self):
+        from tiresias.engine.prover import prove
+        from tiresias.engine.schema import CohortTooSmall
+        from tiresias.query import sql
+
+        spec = sql.parse("SELECT MAX(salary) WHERE dept = 'sales'", self.manifest)
+        with self.assertRaises(CohortTooSmall):
+            prove(self.ds, spec, self.manifest)
+
+    def test_small_groups_are_suppressed_and_verified(self):
+        from tiresias.engine.prover import prove
+        from tiresias.engine.verify import verify_bundle
+        from tiresias.query import sql
+
+        spec = sql.parse("SELECT dept, SUM(salary) GROUP BY dept", self.manifest)
+        bundle = prove(self.ds, spec, self.manifest)
+        self.assertEqual(bundle.result["groups"], {"eng": 450})
+        self.assertEqual(bundle.result["cohorts"], {"eng": 3})
+        self.assertEqual(bundle.result["suppressed"], ["sales"])
+        self.assertTrue(verify_bundle(bundle, self.manifest, dataset=self.ds).ok)
+
+    def test_a_forged_avg_count_is_rejected(self):
+        import copy
+
+        from tiresias.engine.prover import prove
+        from tiresias.engine.verify import verify_bundle
+        from tiresias.query import sql
+
+        spec = sql.parse("SELECT AVG(salary) WHERE dept = 'eng'", self.manifest)
+        bundle = prove(self.ds, spec, self.manifest)
+        self.assertEqual((bundle.result["count"], bundle.result["avg"]), (3, 150))
+        self.assertTrue(verify_bundle(bundle, self.manifest, dataset=self.ds).ok)
+        # A consistent lie about the count: Tier 1 cannot see it, Tier 2 must.
+        forged = copy.deepcopy(bundle)
+        forged.result.update(count=4, cohort=4, avg=450 // 4)
+        self.assertTrue(verify_bundle(forged, self.manifest).ok)
+        self.assertFalse(verify_bundle(forged, self.manifest, dataset=self.ds).ok)
 
 
 if __name__ == "__main__":

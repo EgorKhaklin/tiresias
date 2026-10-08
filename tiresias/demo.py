@@ -14,7 +14,7 @@ import os
 
 from tiresias.engine.commit import commit_dataset, load_aligned
 from tiresias.engine.prover import prove
-from tiresias.engine.schema import ColType, Dataset
+from tiresias.engine.schema import CohortTooSmall, ColType, Dataset
 from tiresias.engine.verify import verify_bundle
 from tiresias.query import sql
 
@@ -43,15 +43,17 @@ def run_demo() -> int:
     # --- 1. Commit (the company, once) ---------------------------------------
     _h("1. COMMIT: the company publishes a binding manifest (no rows)")
     ds = Dataset.from_csv(CSV, TYPES)
-    manifest = commit_dataset(ds, name="acme-payroll-2026", gamma=GAMMA)
+    # The toy payroll has 8 rows, so its cohort floor is 3 (the default is 5).
+    manifest = commit_dataset(ds, name="acme-payroll-2026", gamma=GAMMA, min_cohort=3)
     print(f"rows committed : {manifest.row_count}  (the rows themselves stay private)")
     print(f"dataset_id     : {manifest.dataset_id}")
     print(f"commitment     : {manifest.commitment}")
     print(f"schema         : {[c['name'] for c in manifest.schema]}")
+    print(f"min cohort     : {manifest.min_cohort} rows per answer")
     print("PUBLISHED: the manifest above. Notice it contains zero salaries.")
 
     # --- 2. Query + prove (the data-holder) ----------------------------------
-    _h("2. QUERY: each answer ships with a zero-knowledge proof")
+    _h("2. QUERY: each answer ships with a proof and its proven cohort")
     queries = [
         "SELECT AVG(salary) WHERE dept = 'eng'",
         "SELECT COUNT(*) WHERE remote = 'true'",
@@ -67,8 +69,14 @@ def run_demo() -> int:
         verdict = "ACCEPT" if b.accepted else "REJECT"
         print(f"  {s}")
         print(f"      -> {b.result}   proof: {verdict}")
-    print("\nEach result is a proof BUNDLE: {commitment, query, answer, proof}.")
-    print("It travels to anyone; the rows never do.")
+    print("\nEach result is a proof BUNDLE: {commitment, query, answer, cohort, proof}.")
+    print("It travels to anyone; the rows never do. The 2-row 'ops' group is suppressed.")
+    small = "SELECT MAX(level) WHERE dept = 'ops'"
+    try:
+        prove(ds, sql.parse(small, manifest), manifest)
+        print(f"  {small}\n      -> answered (unexpected)")
+    except CohortTooSmall as e:
+        print(f"  {small}\n      -> refused: {e}")
 
     # --- 3. Verify (the auditor) ---------------------------------------------
     _h("3. VERIFY: an auditor checks a bundle against the public manifest")
@@ -100,11 +108,12 @@ def run_demo() -> int:
     print(
         "Proven today:\n"
         "  - soundness: the prover cannot lie about an aggregate over committed data\n"
-        "  - privacy:   answers reveal the aggregate only, never a row\n"
+        "  - privacy:   answers reveal the aggregate only, never a row, and never\n"
+        "               describe fewer rows than the dataset's minimum cohort\n"
         "  - binding:   every answer is tied to a published, immutable commitment\n"
-        "Roadmap (Glass Track R / soundness.md):\n"
-        "  - fully witness-free third-party verification (serialized STARK verifier)\n"
-        "  - production field + audited hash; external cryptographic audit\n"
+        "Next (docs/roadmap.md):\n"
+        "  - witness-free verification: anyone checks the proof itself, without the data\n"
+        "  - an audited proving backend with zero-knowledge; an external audit\n"
         "Cryptography is EDUCATIONAL-GRADE: a working demonstration of the idea,\n"
         "not yet a vault for real secrets. We say so on every artifact, by design."
     )
