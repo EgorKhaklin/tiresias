@@ -35,10 +35,12 @@ Tiresias is pure standard library and proves with [Glass](https://github.com/Ego
 git clone https://github.com/EgorKhaklin/tiresias && cd tiresias
 pip install -e .                       # Python 3.12; installs the `tiresias` command
 tiresias glass --fetch                 # fetch and verify the pinned Glass
-python3.12 -m tiresias.demo            # commit, query, verify, and watch a forgery fail
+tiresias app                           # the workbench: http://127.0.0.1:8765
 ```
 
-The demo commits a payroll, proves `AVG(salary) WHERE dept = 'eng'`, verifies the answer against the public commitment without the data, and rejects a forged answer.
+The workbench runs on the machine that holds the data and never sends a row anywhere. Drop in a CSV and it detects each column's type; choose the minimum cohort and commit. Then build a question (a total, count, average, lowest or highest value, with conditions and a breakdown) without writing SQL, or write the SQL yourself. Each answer comes back with the number of rows it describes, any groups withheld for being too small, and its verification checks; a tamper test shows a forged answer failing, and the proof downloads as a bundle anyone can check.
+
+For the same flow in a terminal, `python3.12 -m tiresias.demo` commits a payroll, proves `AVG(salary) WHERE dept = 'eng'`, verifies the answer against the public commitment without the data, and rejects a forged answer.
 
 ### The registry, in five commands
 
@@ -96,6 +98,7 @@ tiresias/
   engine/      schema, commitments, the Glass adapter, prover, verifier, proof bundles
   query/       the SQL subset, its parser, and the query algebra it lowers to
   registry/    the multi-tenant server, its store, authentication, and web pages
+  web/         the workbench (`tiresias app`) and the design system its pages share with the registry
   client/      the local prover and the registry client
   sdk.py       an embeddable engine
   cli.py       the `tiresias` command

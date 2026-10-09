@@ -314,6 +314,29 @@ class TestRegistryHandle(unittest.TestCase):
         with self.assertRaises(ApiError):
             self.server.handle("POST", "/api/bundles", self.org, self._bundle_dict())
 
+    def test_a_query_that_is_not_tiresias_sql_is_refused(self):
+        # A shared page once wrote a bundle's query into the page as HTML. The registry now
+        # stores only queries that parse as Tiresias SQL over the bundle's own dataset.
+        from tiresias.registry.server import ApiError
+
+        self.server.handle("POST", "/api/manifests", self.org, self._manifest_dict())
+        bad = dict(self._bundle_dict(), query="<img src=x onerror=alert(document.domain)>")
+        with self.assertRaises(ApiError) as e:
+            self.server.handle("POST", "/api/bundles", self.org, bad)
+        self.assertEqual(e.exception.status, 400)
+        other = dict(self._bundle_dict(), query="SELECT SUM(nope)")
+        with self.assertRaises(ApiError):
+            self.server.handle("POST", "/api/bundles", self.org, other)
+
+    def test_markup_in_a_dataset_name_or_label_is_refused(self):
+        from tiresias.registry.server import ApiError
+
+        for change in ({"name": "<script>alert(1)</script>"},
+                       {"schema": [{"name": "dept", "type": "category", "categories": {"<b>x</b>": 0}}]},
+                       {"schema": [{"name": "bad name", "type": "int", "categories": {}}]}):
+            with self.assertRaises(ApiError, msg=str(change)):
+                self.server.handle("POST", "/api/manifests", self.org, {**self._manifest_dict(), **change})
+
     def test_self_service_keys(self):
         self.server.STORE.issue_key(self.org, "laptop")
         _, listed = self.server.handle("GET", "/api/keys", self.org, {})
@@ -664,6 +687,36 @@ class TestRegistryHttp(unittest.TestCase):
     def auth(self, extra=None):
         return {"Authorization": f"Bearer {self.key}", **(extra or {})}
 
+    def headers(self, path):
+        import http.client
+
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        try:
+            conn.request("GET", path)
+            resp = conn.getresponse()
+            resp.read()
+            return resp.status, {k.lower(): v for k, v in resp.getheaders()}
+        finally:
+            conn.close()
+
+    def test_every_page_runs_under_a_strict_policy(self):
+        for path in ("/", "/console", "/v/shr_anything"):
+            status, h = self.headers(path)
+            self.assertEqual(status, 200, path)
+            csp = h["content-security-policy"]
+            self.assertIn("script-src 'self'", csp)
+            self.assertNotIn("unsafe-inline", csp)
+            self.assertIn("frame-ancestors 'none'", csp)
+            self.assertEqual(h["x-content-type-options"], "nosniff")
+
+    def test_static_files_are_served_and_contained(self):
+        status, h = self.headers("/static/tiresias.css")
+        self.assertEqual((status, h["content-type"]), (200, "text/css; charset=utf-8"))
+        status, h = self.headers("/static/tiresias-dark.svg")
+        self.assertEqual(h["content-security-policy"], "default-src 'none'; style-src 'unsafe-inline'")
+        for path in ("/static/../server.py", "/static/x/../../store.py", "/static/missing.js"):
+            self.assertNotEqual(self.headers(path)[0], 200, path)
+
     def test_a_negative_content_length_is_rejected_without_reading(self):
         status, payload, _ = self.request("POST", "/api/manifests", {"Content-Length": "-1"})
         self.assertEqual(status, 400)
@@ -772,6 +825,68 @@ class TestCohortPolicy(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             commit_dataset(Dataset(columns=[]), name="x", gamma=1, min_cohort=0)
+
+
+class TestPageSources(unittest.TestCase):
+    """The pages build every node as text and run nothing inline, so a tenant's dataset
+    name or query can never become markup or script, even if validation missed it."""
+
+    WEB = os.path.join(os.path.dirname(__file__), "..", "tiresias", "web")
+    REG = os.path.join(os.path.dirname(__file__), "..", "tiresias", "registry")
+
+    def test_scripts_never_write_html(self):
+        import glob
+        import re
+
+        files = glob.glob(os.path.join(self.WEB, "static", "*.js"))
+        self.assertGreaterEqual(len(files), 4)
+        for f in files:
+            src = open(f, encoding="utf-8").read()
+            for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"):
+                self.assertNotIn(sink, src, f"{os.path.basename(f)} uses {sink}")
+            self.assertIsNone(re.search(r"setAttribute\(\s*['\"]on", src), f)
+
+    def test_pages_have_no_inline_script_handler_or_style(self):
+        import glob
+        import re
+
+        pages = glob.glob(os.path.join(self.WEB, "*.html")) + glob.glob(os.path.join(self.REG, "*.html"))
+        self.assertGreaterEqual(len(pages), 4)
+        for f in pages:
+            src = open(f, encoding="utf-8").read()
+            self.assertIsNone(re.search(r"<script(?![^>]*\bsrc=)[^>]*>", src), f"{f}: inline <script>")
+            self.assertIsNone(re.search(r"\son[a-z]+\s*=", src), f"{f}: inline handler")
+            self.assertIsNone(re.search(r"\sstyle\s*=", src), f"{f}: inline style")
+            self.assertNotIn("<style", src, f)
+
+
+class TestWorkbench(unittest.TestCase):
+    """The workbench's CSV handling, before any proof runs."""
+
+    def setUp(self):
+        from tiresias.web import server
+
+        self.w = server
+
+    def test_types_are_guessed_from_the_values(self):
+        info = self.w.api_inspect({"csv": "dept,level,remote,flag\neng,5,true,1\nops,2,false,0\n"})
+        self.assertEqual({c["name"]: c["guess"] for c in info["columns"]},
+                         {"dept": "category", "level": "int", "remote": "bool", "flag": "bool"})
+        self.assertEqual(info["rows"], 2)
+        self.assertEqual(info["preview"][0], ["eng", "5", "true", "1"])
+
+    def test_malformed_csv_is_refused_with_a_reason(self):
+        for text, reason in (("", "header"), ("a,a\n1,2\n", "duplicate"), ("a,b\n1\n", "number of fields"),
+                             ("a,b\n", "no rows"), ("bad name,b\n1,2\n", "letters")):
+            with self.assertRaises(ValueError) as e:
+                self.w.api_inspect({"csv": text})
+            self.assertIn(reason, str(e.exception), text)
+
+    def test_the_minimum_cohort_must_fit_the_dataset(self):
+        with self.assertRaises(ValueError):
+            self.w.api_commit({"csv": "a\n1\n2\n", "types": {"a": "int"}, "min_cohort": 3})
+        with self.assertRaises(ValueError):
+            self.w.api_commit({"csv": "a\n1\n2\n", "types": {"a": "int"}, "min_cohort": 0})
 
 
 if __name__ == "__main__":

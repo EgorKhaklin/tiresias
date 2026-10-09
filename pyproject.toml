@@ -33,7 +33,7 @@ tiresias = "tiresias.cli:main"
 include = ["tiresias*"]
 
 [tool.setuptools.package-data]
-"tiresias.web" = ["*.html"]
+"tiresias.web" = ["*.html", "static/*.css", "static/*.js", "static/*.svg", "static/fonts/*"]
 "tiresias.registry" = ["*.html"]
 
 [tool.pyright]

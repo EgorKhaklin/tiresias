@@ -23,11 +23,33 @@ from tiresias import __version__, config
 from tiresias.engine.bundle import ProofBundle
 from tiresias.engine.commit import Manifest
 from tiresias.engine.verify import verify_bundle
+from tiresias.query import sql
 from tiresias.registry import auth
 from tiresias.registry.store import Store
 
 log = config.get_logger("tiresias.registry")
 HERE = os.path.dirname(__file__)
+# The design system and page scripts are shared with the workbench (tiresias/web/static).
+STATIC = os.path.join(os.path.dirname(HERE), "web", "static")
+_STATIC = re.compile(r"^/static/([A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.(?:css|js|svg|woff2|txt))$")
+_STATIC_TYPES = {"css": "text/css; charset=utf-8", "js": "text/javascript; charset=utf-8",
+                 "svg": "image/svg+xml", "woff2": "font/woff2", "txt": "text/plain; charset=utf-8"}
+# Every response: no inline script or style, nothing from another origin, never framed.
+# Pages build their content as text nodes, so a tenant's dataset name or query cannot
+# become markup; the policy is the second line of defence.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; "
+        "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
+        "frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
+SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'"
+_LABEL = re.compile(r"^[^\x00-\x1f\x7f<>]{1,64}$")   # a category label or dataset name: no control characters, no markup
+_COLUMN = re.compile(r"^[A-Za-z_]\w{0,63}$")
+MAX_QUERY = 2000
 STORE = Store(config.DB_PATH)
 
 _BUNDLE_VERIFY = re.compile(r"^/api/bundles/([\w]+)/verify$")
@@ -82,6 +104,45 @@ RL = RateLimiter(config.RATE_PER_MIN)
 # The unauthenticated surfaces (public share lookups, admin routes) are limited per
 # client address instead, with the same per-minute budget.
 IP_RL = RateLimiter(config.RATE_PER_MIN)
+
+
+def _check_manifest(body: dict) -> None:
+    """A manifest's tenant-controlled text must be plain: it is shown to other people."""
+    name = body.get("name", "")
+    if not isinstance(name, str) or (name and not _LABEL.match(name)):
+        raise ApiError(400, "name must be 1 to 64 characters, without control characters or < >")
+    schema = body.get("schema")
+    if not isinstance(schema, list) or not schema:
+        raise ApiError(400, "schema must be a non-empty list of columns")
+    for col in schema:
+        if not isinstance(col, dict) or not isinstance(col.get("name"), str) or not _COLUMN.match(col["name"]):
+            raise ApiError(400, "each column name must be letters, digits and underscores")
+        if col.get("type") not in ("int", "bool", "category"):
+            raise ApiError(400, f"column {col['name']!r} has an unknown type")
+        cats = col.get("categories") or {}
+        if not isinstance(cats, dict) or not all(
+                isinstance(k, str) and _LABEL.match(k) and isinstance(v, int) for k, v in cats.items()):
+            raise ApiError(400, f"column {col['name']!r} has a malformed category label")
+
+
+def _check_bundle_query(body: dict, manifest: dict) -> None:
+    """A bundle's query must be a query Tiresias proves, over this dataset's columns."""
+    query = body.get("query")
+    if not isinstance(query, str) or not query.strip() or len(query) > MAX_QUERY:
+        raise ApiError(400, f"query must be a non-empty string of at most {MAX_QUERY} characters")
+    try:
+        sql.parse(query, _reconstruct(Manifest, manifest))
+    except (sql.SqlError, KeyError, ValueError) as e:
+        raise ApiError(400, f"query is not a Tiresias query over this dataset: {e}") from None
+    known = {c["name"] for c in manifest.get("schema", [])}
+    named = set(re.findall(r"\(\s*([A-Za-z_]\w*)\s*\)", query))
+    named |= set(re.findall(r"\b([A-Za-z_]\w*)\s*(?:<=|>=|!=|=|<|>)", query))
+    named |= set(re.findall(r"(?i)\bgroup\s+by\s+([A-Za-z_]\w*)", query))
+    unknown = sorted(named - known)
+    if unknown:
+        raise ApiError(400, f"query names columns this dataset does not have: {unknown}")
+    if not isinstance(body.get("result"), dict):
+        raise ApiError(400, "result must be an object")
 
 
 def _require_id(body: dict, field: str) -> str:
@@ -241,6 +302,7 @@ def handle(
         if missing:
             raise ApiError(400, f"manifest missing fields: {sorted(missing)}")
         _require_id(body, "dataset_id")
+        _check_manifest(body)
         STORE.put_manifest(org_id, body)
         STORE.audit(org_id, "manifest.register", body["dataset_id"])
         log.info("org=%s registered manifest %s", org_id, body["dataset_id"])
@@ -267,6 +329,7 @@ def handle(
         manifest = STORE.get_manifest(org_id, body["dataset_id"])
         if not manifest:
             raise ApiError(400, "no manifest for this dataset_id; register it first")
+        _check_bundle_query(body, manifest)
         verification = _tier1(body, manifest)
         STORE.put_bundle(org_id, body, verification["ok"], verification["tier"])
         STORE.audit(org_id, "bundle.submit", f"{body['bundle_id']} ok={verification['ok']}")
@@ -319,6 +382,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        for k, v in SECURITY_HEADERS.items():
+            if k == "Content-Security-Policy" and ctype == "image/svg+xml":
+                v = SVG_CSP   # the logos animate with an inline <style>; an SVG image never runs script
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
@@ -370,6 +437,13 @@ class Handler(BaseHTTPRequestHandler):
             with open(os.path.join(HERE, "console.html"), "rb") as f:
                 self._send(200, f.read(), "text/html; charset=utf-8")
             return
+        m = _STATIC.match(path)
+        if m:
+            target = os.path.join(STATIC, m.group(1))
+            if os.path.isfile(target):
+                with open(target, "rb") as f:
+                    self._send(200, f.read(), _STATIC_TYPES[target.rsplit(".", 1)[-1]])
+                return
         if path == "/healthz":
             self._json(200, {"status": "ok", "service": "tiresias-registry"})
             return

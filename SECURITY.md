@@ -43,6 +43,15 @@ What was checked in the registry (`tiresias/registry/`) and what changed:
 
 Known limits: the rate limiter is in memory and per process, so it does not span replicas; TLS is expected to terminate at a reverse proxy in front of the registry; failed authentication is not throttled separately, since a 256-bit key cannot be guessed.
 
+## Pages review, October 2026
+
+Redesigning the web pages surfaced a stored cross-site scripting hole in the registry, now closed:
+
+- **The shared-answer page wrote tenant text as HTML.** `/v/<token>` set a bundle's query, the organization name, the dataset name and the check names through `innerHTML`, unescaped, and the registry stored any query string a tenant uploaded. A tenant could publish a share link whose page ran script on the registry's origin, where the console kept API keys in `localStorage`; anyone signed in to the console who opened the link could lose their key.
+- **The fix, in layers.** Every page now builds its content as text nodes; a test fails if a page script uses `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write` or `eval`. Every registry and workbench response carries a Content-Security-Policy that allows script only from the server's own files and forbids inline script, inline handlers and framing; a test fails if a page carries an inline script, handler or style. The registry refuses, with `400`, a bundle whose query is not Tiresias SQL over its own dataset's columns, and a manifest whose name or category labels contain markup or control characters. The console keeps the API key in `sessionStorage`, for the tab only.
+
+Each fix has a regression test, and undoing any one of them fails its test.
+
 ## Reporting an issue
 
 This is a research/demonstration project. If you find a correctness or security

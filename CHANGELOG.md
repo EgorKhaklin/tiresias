@@ -8,6 +8,19 @@ Entries use the [Keep a Changelog](https://keepachangelog.com/) groups: Security
 
 ## Unreleased
 
+### Security
+
+- The public shared-answer page wrote a bundle's query, the organization name and the dataset name into the page as HTML, and the registry stored any query a tenant uploaded. A tenant could publish a link whose page ran script on the registry's origin and read the API key the console kept in `localStorage`. Pages now build every node as text, every response carries a Content-Security-Policy that forbids inline script, the registry refuses queries that are not Tiresias SQL over the bundle's own columns and names with markup, and the console keeps the key for the tab only.
+
+### Added
+
+- `tiresias app`, the workbench, for the data holder's machine: commit a CSV with detected column types and a chosen minimum cohort, build questions without writing SQL (or write it), see each answer with its cohort and withheld groups, verify it, run a tamper test, and download the proof.
+
+### Changed
+
+- The registry's landing page, console and shared-answer page are redesigned in the house style (Cinzel capitals, the meander rule, the oracle-bronze accent, light and dark), on one design system shared with the workbench. The proofs' status is stated once, in plain words, where it applies.
+- The registry refuses a bundle whose query names a column its dataset does not have.
+
 ## v1.0.0 - 2026-10-08 (development resumes under the Tiresias name)
 
 ### Added

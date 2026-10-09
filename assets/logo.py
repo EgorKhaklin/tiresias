@@ -175,10 +175,22 @@ def mark(theme):
 """
 
 
+def still(svg):
+    """The finished frame without animation, for web pages: the <style> is gone, so the SVG
+    renders the same under any Content-Security-Policy, and the one-time glint is dropped."""
+    import re
+    svg = re.sub(r"<style>.*?</style>", "", svg, flags=re.S)
+    svg = re.sub(r'<rect class="glint"[^>]*/>', "", svg)
+    svg = svg.replace('class="row"', 'opacity="0.2"').replace('class="spoke"', 'opacity="0.6"')
+    return re.sub(r' class="(draw|win|sig|gem|word)"', "", svg)
+
+
 def main():
+    web = HERE.parent / "tiresias" / "web" / "static"
     for theme in THEMES:
         svg, nw, sw = lockup(theme)
         (HERE / f"tiresias-{theme}.svg").write_text(svg)
+        (web / f"tiresias-{theme}.svg").write_text(still(svg))
         (HERE / f"tiresias-mark-{theme}.svg").write_text(mark(theme))
         print("%s: name %.0f px, subtitle %.0f px" % (theme, nw, sw))
 

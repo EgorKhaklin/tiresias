@@ -85,6 +85,14 @@ JSON `{"error": "..."}` with HTTP `400` (bad request), `401` (auth), `404`
 `{"error": "internal error", "error_id": "..."}`; the details are in the server
 log under that id.
 
+## What the registry accepts
+
+A manifest's `name` and its category labels are shown to other people, so they
+must be 1 to 64 characters without control characters or `<` `>`, and column
+names must be letters, digits and underscores. A bundle's `query` must parse as
+Tiresias SQL and name only the columns of the bundle's own dataset. Anything else
+is refused with `400`, before it is stored.
+
 ## Programmatic use
 
 Prefer the SDK (`tiresias.sdk`): `Tiresias(registry_url, api_key)` exposes `commit_csv`,

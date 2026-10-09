@@ -87,6 +87,13 @@ def cmd_demo(args) -> int:
     return run_demo()
 
 
+def cmd_app(args) -> int:
+    from tiresias.web.server import serve
+
+    serve(args.host, args.port)
+    return 0
+
+
 def cmd_serve(args) -> int:
     # Validate before importing the server: importing it opens the database.
     found = config.problems(scope="registry")
@@ -266,6 +273,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("demo", help="run the end-to-end demo on the sample dataset")
     d.set_defaults(func=cmd_demo)
+
+    ap = sub.add_parser("app", help="open the workbench: commit data, ask questions, verify proofs (local)")
+    ap.add_argument("--host", default="127.0.0.1", help="interface to bind (default: this machine only)")
+    ap.add_argument("--port", type=int, default=8765)
+    ap.set_defaults(func=cmd_app)
 
     sv = sub.add_parser("serve", help="run the registry server")
     sv.add_argument("--host", default=config.REGISTRY_HOST)

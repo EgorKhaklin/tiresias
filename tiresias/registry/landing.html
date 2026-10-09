@@ -3,115 +3,116 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tiresias</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b0f14'/><path d='M16 6L26 25H6Z' fill='none' stroke='%235cc8ff' stroke-width='2.6' stroke-linejoin='round'/></svg>">
-<style>
-  :root { --bg:#0b0f14; --panel:rgba(255,255,255,.04); --line:rgba(255,255,255,.10);
-    --ink:#e8eef5; --dim:#8aa0b4; --accent:#5cc8ff; --ok:#4ade80; --warn:#fbbf24; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:radial-gradient(1200px 600px at 50% -10%, #11202c 0%, var(--bg) 55%);
-    color:var(--ink); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
-  a { color:var(--accent); text-decoration:none; }
-  .wrap { max-width:880px; margin:0 auto; padding:0 22px; }
-  header { display:flex; justify-content:space-between; align-items:center; padding:22px 0; }
-  .logo { font-weight:700; } .logo .g { color:var(--accent); }
-  nav a { margin-left:18px; color:var(--dim); font-size:14px; }
-  nav a:hover { color:var(--ink); }
-  .hero { padding:54px 0 30px; }
-  .hero h1 { font-size:42px; line-height:1.12; margin:0 0 14px; letter-spacing:-.5px; }
-  .hero h1 .accent { color:var(--accent); }
-  .hero p { font-size:19px; color:var(--dim); max-width:620px; margin:0 0 26px; }
-  .cta a { display:inline-block; margin-right:12px; padding:12px 20px; border-radius:10px; font-weight:600; font-size:15px; }
-  .cta .primary { background:var(--accent); color:#04121c; }
-  .cta .ghost { border:1px solid var(--line); color:var(--ink); }
-  .banner { margin:22px 0 0; padding:12px 16px; border:1px solid var(--line); border-radius:12px;
-    background:rgba(251,191,36,.06); color:var(--ink); font-size:13.5px; }
-  .banner b { color:var(--warn); }
-  section { padding:34px 0; border-top:1px solid var(--line); }
-  h2 { font-size:14px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:0 0 18px; }
-  .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
-  .step { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; }
-  .step .n { color:var(--accent); font-weight:700; }
-  .step h3 { margin:6px 0 6px; font-size:16px; } .step p { margin:0; color:var(--dim); font-size:14px; }
-  pre { background:#0e141b; border:1px solid var(--line); border-radius:12px; padding:16px 18px;
-    overflow:auto; font-family:ui-monospace,Menlo,monospace; font-size:13px; color:var(--ink); }
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  th,td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); }
-  th { color:var(--dim); font-weight:500; } td .ok { color:var(--ok); } td .dim { color:var(--dim); }
-  .uses { display:flex; flex-wrap:wrap; gap:10px; }
-  .uses span { border:1px solid var(--line); border-radius:99px; padding:6px 12px; font-size:13px; color:var(--dim); }
-  footer { padding:30px 0 60px; color:var(--dim); font-size:13px; border-top:1px solid var(--line); }
-</style>
+<title>Tiresias: answers about private data, with a proof</title>
+<meta name="description" content="Commit a private dataset, answer aggregate questions about it with a proof, and never reveal a row.">
+<link rel="icon" href="/static/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/tiresias.css">
+<script src="/static/ui.js" defer></script>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="logo">Tiresias</div>
-    <nav>
+<a class="sr" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="Tiresias, home">
+      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+        <path d="M16 2.5 27.7 9.25v13.5L16 29.5 4.3 22.75V9.25Z"/>
+        <path d="M16 9.6 21.5 12.8v6.4L16 22.4l-5.5-3.2v-6.4Z" stroke-width="1"/>
+        <path d="M18.6 13.3h-5.2l2.6 2.7-2.6 2.7h5.2" stroke-width="1.3" stroke-linecap="round"/>
+      </svg>
+      <b>TIRESIAS</b>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="/" aria-current="page">Overview</a>
       <a href="/console">Console</a>
-      <a href="https://github.com/EgorKhaklin/Glass">Glass</a>
+      <a href="https://github.com/EgorKhaklin/tiresias">Docs</a>
     </nav>
-  </header>
-
-  <div class="hero">
-    <h1>Prove answers about private data<br><span class="accent">without revealing the data.</span></h1>
-    <p>Commit a sensitive dataset, then answer aggregate queries with a proof that the
-       answer is the true result over the committed data, revealing only the commitment,
-       the query, and the answer. Never a row, and never an answer about too few rows.</p>
-    <div class="cta">
-      <a class="primary" href="/console">Open the console</a>
-      <a class="ghost" href="https://github.com/EgorKhaklin/Glass">Built on Glass</a>
+    <div class="end">
+      <a class="pill" href="#status">Preview</a>
+      <button class="iconbtn" id="theme" type="button" aria-label="Switch between light and dark">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm0 1.5v11a5.5 5.5 0 0 1 0-11Z"/></svg>
+      </button>
     </div>
-    <div class="banner"><b>Honesty first.</b> The cryptography here is
-      <b>educational-grade</b>: a working demonstration of the idea, end to end, not a
-      vault for real secrets yet. Every artifact is stamped <code>crypto-grade: educational</code>.
-      What's real and what's roadmap is stated plainly, by design.</div>
   </div>
+  <nav class="nav mobile" aria-label="Main">
+    <a href="/" aria-current="page">Overview</a>
+    <a href="/console">Console</a>
+    <a href="https://github.com/EgorKhaklin/tiresias">Docs</a>
+  </nav>
+</header>
+
+<main id="main" class="wrap" tabindex="-1">
+  <section class="hero">
+    <img class="lockup dark" src="/static/tiresias-dark.svg" alt="Tiresias: verifiable private analytics" width="1200" height="360">
+    <img class="lockup light" src="/static/tiresias-light.svg" alt="" width="1200" height="360">
+    <h1>Answers about private data, with a proof</h1>
+    <p class="lede">Commit a sensitive dataset, then answer aggregate questions about it. Every answer carries a proof that it is the true result over the committed rows, and the number of rows it describes. Nobody sees a row, and nobody gets an answer about too few.</p>
+    <div class="row">
+      <a class="btn primary" href="/console">Open the console</a>
+      <a class="btn" href="#start">Run it on your data</a>
+    </div>
+  </section>
+
+  <div class="meander" aria-hidden="true"></div>
 
   <section>
-    <h2>How it works</h2>
+    <p class="eyebrow">How it works</p>
     <div class="steps">
-      <div class="step"><div class="n">01</div><h3>Commit</h3>
-        <p>Publish a binding commitment to your dataset. No rows, just a fingerprint and schema.</p></div>
-      <div class="step"><div class="n">02</div><h3>Query &amp; prove</h3>
-        <p>Run SUM / COUNT / AVG / MIN / MAX / GROUP BY. Proving happens where the data lives; only the proof bundle travels.</p></div>
-      <div class="step"><div class="n">03</div><h3>Verify</h3>
-        <p>Anyone confirms the answer is bound to the published commitment, with no account and no access to the data.</p></div>
+      <div><h3>Commit</h3><p class="muted">The data holder fingerprints the rows into a commitment and publishes it as a manifest: the schema, the row count and a minimum cohort. No row is in it.</p></div>
+      <div><h3>Ask</h3><p class="muted">Questions are proved where the data lives: totals, counts, averages, extremes and breakdowns. Below the minimum cohort, Tiresias declines rather than answers.</p></div>
+      <div><h3>Verify</h3><p class="muted">The answer travels as a proof bundle. Anyone with the link confirms it is bound to the published commitment, with no account and no access to the data.</p></div>
     </div>
   </section>
 
-  <section>
-    <h2>The zero-trust flow</h2>
-    <pre>TIRESIAS_ADMIN_TOKEN=secret tiresias serve        # registry: multi-tenant, never sees a row
-tiresias create-org "Acme Health"                 # provision a tenant + API key
-tiresias remote-commit payroll.csv                # commit LOCALLY, upload only the manifest
-tiresias remote-query &lt;id&gt; "SELECT SUM(salary) GROUP BY dept" --data payroll.csv
-tiresias share &lt;bundle&gt;                           # public verification link (no account, no data)</pre>
-  </section>
+  <div class="meander" aria-hidden="true"></div>
 
   <section>
-    <h2>What a proof buys you</h2>
-    <table>
-      <tr><th>Tier</th><th>Who verifies</th><th>Needs data?</th><th>Guarantee</th></tr>
-      <tr><td>Binding</td><td>anyone (public link)</td><td class="dim">no</td><td>answer tied to a published, immutable commitment</td></tr>
-      <tr><td>Reproducible</td><td>the data-holder</td><td class="dim">yes</td><td>the prover could not have lied about the answer</td></tr>
-      <tr><td>Witness-free</td><td>any third party</td><td class="dim">no</td><td><span class="dim">roadmap: independent proof re-verification</span></td></tr>
-    </table>
-  </section>
-
-  <section>
-    <h2>Built for</h2>
-    <div class="uses">
-      <span>Regulatory reporting</span><span>Audits</span><span>Cross-org benchmarking</span>
-      <span>Data clean rooms</span><span>Confidential due diligence</span>
+    <p class="eyebrow">Who it is for</p>
+    <div class="grid three">
+      <div class="tablet"><h2>Data holders</h2><p class="muted">Share statistics about records you cannot share: payroll, patients, transactions. Publish the commitment once; answer as many questions as you choose.</p></div>
+      <div class="tablet"><h2>Analysts</h2><p class="muted">Ask in plain terms or in SQL. Each answer arrives with its cohort and its proof, ready to cite, so nobody has to take the number on trust.</p></div>
+      <div class="tablet"><h2>Auditors</h2><p class="muted">Open a shared link and see the checks run: the answer, the dataset it is bound to, and the commitment that dataset published.</p></div>
     </div>
   </section>
 
-  <footer>
-    Anywhere you must share a number but not the data. Powered by
-    <a href="https://github.com/EgorKhaklin/Glass">Glass</a>, a self-hosting verifiable
-    language with a from-scratch zk-STARK. Apache-2.0.
-  </footer>
-</div>
+  <div class="meander" aria-hidden="true"></div>
+
+  <section id="start">
+    <p class="eyebrow">Run it on your data</p>
+    <h2>The workbench, then the registry</h2>
+    <p class="muted">The workbench runs on the machine that holds the data. Rows never leave it; commitments and proofs go to the registry, which never sees a row.</p>
+    <div class="code gap"><span class="c"># on the data holder's machine</span>
+pip install git+https://github.com/EgorKhaklin/tiresias
+tiresias app                                          <span class="c"># commit a CSV, ask, verify: http://127.0.0.1:8765</span>
+
+<span class="c"># publishing to a registry</span>
+tiresias remote-commit payroll.csv                    <span class="c"># uploads the manifest, never the rows</span>
+tiresias remote-query &lt;dataset&gt; "SELECT SUM(salary) GROUP BY dept" --data payroll.csv
+tiresias share &lt;bundle&gt;                               <span class="c"># a public verification link</span></div>
+  </section>
+
+  <div class="meander" aria-hidden="true"></div>
+
+  <section id="status">
+    <p class="eyebrow">What a proof guarantees today</p>
+    <div class="tablet">
+      <table class="table">
+        <thead><tr><th>Check</th><th>Who can run it</th><th>Guarantee</th></tr></thead>
+        <tbody>
+          <tr><td>Binding</td><td>anyone, without the data</td><td>the answer is tied to the published commitment</td></tr>
+          <tr><td>Reproducible</td><td>the data holder</td><td>re-proving yields this answer, so it was not forged</td></tr>
+          <tr><td>Witness-free</td><td class="muted">not yet</td><td class="muted">a third party checks the proof itself, without the data</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notice warn gap"><b>Preview: not yet for real secrets.</b>Proofs run on Glass's research prover, over a 31-bit field with an unaudited hash, and they are not yet zero-knowledge. They demonstrate the guarantees above; they are not a vault. Tiresias moves to an audited, zero-knowledge proving system next, and this notice changes when it does.</div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Tiresias, the seer of Thebes, answered truly without seeing.</span>
+    <span>Built on <a href="https://github.com/EgorKhaklin/Glass">Glass</a> · <a href="https://github.com/EgorKhaklin/tiresias">Source</a></span>
+  </div>
+</footer>
 </body>
 </html>
