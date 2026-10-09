@@ -13,12 +13,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: RISC Zero 3.0.6 (r0vm, which proves)
+      - name: RISC Zero 3.0.6 (r0vm, which proves) and its Rust 1.97.0 (whose version sets the guest's build flags)
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           curl -fsSL https://risczero.com/install | bash
           ~/.risc0/bin/rzup install r0vm 3.0.6
+          ~/.risc0/bin/rzup install rust 1.97.0
 
       - uses: actions/cache@v4
         with:

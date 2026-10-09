@@ -2,7 +2,8 @@
 # Rebuild the guest in RISC Zero's pinned Docker image and pin it: the binary the
 # prover embeds, and its image id. The build is reproducible, so on any machine
 # this leaves pinned/ unchanged unless the guest's source changed; CI runs it and
-# fails on any difference.
+# fails on any difference. Needs Docker and `rzup install rust 1.97.0`: risc0-build
+# reads that toolchain's version to choose the flags it passes into the image.
 set -eu
 cd "$(dirname "$0")"
 cargo build --release -p tiresias-methods

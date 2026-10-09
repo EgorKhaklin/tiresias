@@ -29,6 +29,14 @@ jobs:
           test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, pyproject $v"; exit 1; }
           test "$(tiresias --version)" = "tiresias $v" || { echo "tiresias --version says: $(tiresias --version)"; exit 1; }
 
+      - name: RISC Zero 3.0.6 and its Rust 1.97.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsSL https://risczero.com/install | bash
+          ~/.risc0/bin/rzup install r0vm 3.0.6
+          ~/.risc0/bin/rzup install rust 1.97.0
+
       - name: The pinned guest rebuilds byte for byte, and the prover embeds it
         run: |
           zkvm/pin-guest.sh

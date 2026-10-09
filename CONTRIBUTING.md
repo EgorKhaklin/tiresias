@@ -18,8 +18,9 @@ python3.12 -m tiresias.demo                             # the narrated demo
 ```
 
 The prover embeds the pinned guest (`zkvm/pinned`), so building it needs no Docker. After
-changing the guest (`zkvm/methods/guest` or `zkvm/core`), run `zkvm/pin-guest.sh`: it
-rebuilds the guest in RISC Zero's Docker image, re-pins it, and rebuilds the prover. Then
+changing the guest (`zkvm/methods/guest` or `zkvm/core`), run `zkvm/pin-guest.sh` (it needs
+Docker and `rzup install rust 1.97.0`): it rebuilds the guest in RISC Zero's Docker image,
+re-pins it, and rebuilds the prover. Then
 regenerate the test fixture with `python3.12 -m tests.make_fixtures`, and commit both.
 
 The Python package itself has **no third-party dependencies**; keep it that way.
