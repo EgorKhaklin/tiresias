@@ -1,126 +1,93 @@
-"""End-to-end engine test (requires the Glass engine + python3.12).
+"""End-to-end engine tests: real proofs in the RISC Zero zkVM.
 
-Slow: each case runs a real Glass proof. Skipped automatically if the Glass
-engine cannot be found.
+Slow: each proof takes about a minute. Needs tiresias-prover (cargo build
+--release in zkvm/) and RISC Zero's r0vm (rzup install r0vm 3.0.6).
 
   python3.12 -m unittest tests.test_engine
 """
 
 from __future__ import annotations
 
+import io
+import json
 import os
-import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 
-# Keep the registry database out of the home directory: config reads this at import.
-os.environ.setdefault("TIRESIAS_DB", os.path.join(tempfile.mkdtemp(prefix="tiresias-test-"), "registry.db"))
+_TMP = tempfile.mkdtemp(prefix="tiresias-test-")
+os.environ.setdefault("TIRESIAS_DB", os.path.join(_TMP, "registry.db"))
+os.environ.setdefault("TIRESIAS_OPENINGS", os.path.join(_TMP, "openings"))
 
-from tiresias.engine import glass_pin
-
-# Runs only against a Glass checkout that is already present and matches the pins;
-# the test never fetches.
-_GLASS_ROOT = glass_pin.resolve(fetch=False)
-GLASS_OK = (
-    _GLASS_ROOT is not None
-    and sys.version_info >= (3, 10)
-    and (not glass_pin.mismatches(_GLASS_ROOT) or os.environ.get("TIRESIAS_GLASS_UNPINNED") == "1")
-)
+from tiresias.engine import zkvm
+from tiresias.engine.commit import commit_dataset, schema_digest
+from tiresias.engine.prover import prove
+from tiresias.engine.schema import Column, ColType, Dataset
+from tiresias.engine.verify import verify_bundle
+from tiresias.query import sql
 
 
-@unittest.skipUnless(GLASS_OK, "pinned Glass checkout not present (run `tiresias glass --fetch`)")
-class TestEngineRoundtrip(unittest.TestCase):
-    def test_commit_prove_verify_tamper(self):
-        from tiresias.engine.commit import commit_dataset
-        from tiresias.engine.prover import prove
-        from tiresias.engine.schema import Column, ColType, Dataset
-        from tiresias.engine.verify import verify_bundle
-        from tiresias.query import sql
-
-        ds = Dataset(
-            columns=[
-                Column("dept", ColType.CATEGORY),
-                Column("salary", ColType.INT),
-            ],
-            rows=[],
-        )
-        for dept, sal in [("eng", 100), ("sales", 90), ("eng", 150)]:
-            ds.rows.append([ds.columns[0].encode(dept), ds.columns[1].encode(sal)])
-
-        manifest = commit_dataset(ds, name="t", gamma=918273645, min_cohort=2)
-        spec = sql.parse("SELECT SUM(salary) WHERE dept = 'eng'", manifest)
-        bundle = prove(ds, spec, manifest)
-
-        self.assertEqual(bundle.result["value"], 250)  # 100 + 150
-        self.assertTrue(bundle.accepted)
-        self.assertEqual(bundle.commitment, manifest.commitment)
-
-        # honest bundle verifies (both tiers)
-        res = verify_bundle(bundle, manifest, dataset=ds)
-        self.assertTrue(res.ok)
-
-        # forged answer is rejected
-        import copy
-
-        forged = copy.deepcopy(bundle)
-        forged.result["value"] = 999
-        self.assertFalse(verify_bundle(forged, manifest, dataset=ds).ok)
+def _dataset() -> Dataset:
+    # dept, delta: negative values, and a group too small to answer about
+    rows = [[0, 120], [0, -30], [0, 75], [1, -40], [1, -41], [1, 7], [2, 5]]
+    return Dataset(
+        columns=[Column("dept", ColType.CATEGORY, {"eng": 0, "ops": 1, "hr": 2}), Column("delta", ColType.INT)],
+        rows=[list(r) for r in rows],
+    )
 
 
-def _payroll():
-    from tiresias.engine.schema import Column, ColType, Dataset
+class TestEngine(unittest.TestCase):
+    """prove() checks the guest's commitment and answer against Python's own, so
+    every proof here is also a check that the two implementations agree."""
 
-    ds = Dataset(columns=[Column("dept", ColType.CATEGORY), Column("salary", ColType.INT)], rows=[])
-    for dept, sal in [("eng", 100), ("eng", 150), ("eng", 200), ("sales", 90)]:
-        ds.rows.append([ds.columns[0].encode(dept), ds.columns[1].encode(sal)])
-    return ds
+    def test_sum_with_negatives_verifies_and_a_forgery_fails(self):
+        ds = _dataset()
+        m = commit_dataset(ds, "deltas", min_cohort=3)
+        b = prove(ds, sql.parse("SELECT SUM(delta) WHERE dept != 'hr' AND delta <= 75", m), m)
+        self.assertEqual(b.result, {"value": -29, "cohort": 5})
+        self.assertTrue(verify_bundle(b, m).ok)
+        b.result["value"] = 0
+        self.assertFalse(verify_bundle(b, m).ok)
+
+    def test_avg_floors_like_the_plain_evaluation(self):
+        ds = _dataset()
+        m = commit_dataset(ds, "deltas", min_cohort=3)
+        b = prove(ds, sql.parse("SELECT AVG(delta) WHERE dept = 'ops'", m), m)
+        self.assertEqual(b.result, {"sum": -74, "count": 3, "avg": -25, "cohort": 3})
+        self.assertTrue(verify_bundle(b, m).ok)
+
+    def test_the_guest_refuses_a_small_cohort_itself(self):
+        # Straight to the guest, past the Python check: no receipt can be made.
+        ds = _dataset()
+        m = commit_dataset(ds, "deltas", min_cohort=3)
+        plan = sql.parse("SELECT MAX(delta) WHERE dept = 'hr'", m).plan(m)
+        cells = [c for r in ds.rows for c in r]
+        with self.assertRaises(zkvm.Refused) as e:
+            zkvm.prove(ds.salt, schema_digest(m.schema), 2, cells, plan)
+        self.assertIn("minimum cohort", str(e.exception))
 
 
-@unittest.skipUnless(GLASS_OK, "pinned Glass checkout not present (run `tiresias glass --fetch`)")
-class TestEngineCohorts(unittest.TestCase):
-    def setUp(self):
-        from tiresias.engine.commit import commit_dataset
+class TestCli(unittest.TestCase):
+    def test_commit_query_verify(self):
+        from tiresias import cli
 
-        self.ds = _payroll()
-        self.manifest = commit_dataset(self.ds, name="p", gamma=918273645, min_cohort=2)
-
-    def test_a_query_about_too_few_rows_is_refused(self):
-        from tiresias.engine.prover import prove
-        from tiresias.engine.schema import CohortTooSmall
-        from tiresias.query import sql
-
-        spec = sql.parse("SELECT MAX(salary) WHERE dept = 'sales'", self.manifest)
-        with self.assertRaises(CohortTooSmall):
-            prove(self.ds, spec, self.manifest)
-
-    def test_small_groups_are_suppressed_and_verified(self):
-        from tiresias.engine.prover import prove
-        from tiresias.engine.verify import verify_bundle
-        from tiresias.query import sql
-
-        spec = sql.parse("SELECT dept, SUM(salary) GROUP BY dept", self.manifest)
-        bundle = prove(self.ds, spec, self.manifest)
-        self.assertEqual(bundle.result["groups"], {"eng": 450})
-        self.assertEqual(bundle.result["cohorts"], {"eng": 3})
-        self.assertEqual(bundle.result["suppressed"], ["sales"])
-        self.assertTrue(verify_bundle(bundle, self.manifest, dataset=self.ds).ok)
-
-    def test_a_forged_avg_count_is_rejected(self):
-        import copy
-
-        from tiresias.engine.prover import prove
-        from tiresias.engine.verify import verify_bundle
-        from tiresias.query import sql
-
-        spec = sql.parse("SELECT AVG(salary) WHERE dept = 'eng'", self.manifest)
-        bundle = prove(self.ds, spec, self.manifest)
-        self.assertEqual((bundle.result["count"], bundle.result["avg"]), (3, 150))
-        self.assertTrue(verify_bundle(bundle, self.manifest, dataset=self.ds).ok)
-        # A consistent lie about the count: Tier 1 cannot see it, Tier 2 must.
-        forged = copy.deepcopy(bundle)
-        forged.result.update(count=4, cohort=4, avg=450 // 4)
-        self.assertTrue(verify_bundle(forged, self.manifest).ok)
-        self.assertFalse(verify_bundle(forged, self.manifest, dataset=self.ds).ok)
+        tmp = tempfile.mkdtemp()
+        csv = os.path.join(os.path.dirname(__file__), "..", "examples", "payroll.csv")
+        man = os.path.join(tmp, "m.json")
+        out = os.path.join(tmp, "b.json")
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["commit", csv, "--types", "dept=category,remote=bool",
+                                       "--min-cohort", "3", "-o", man]), 0)
+            self.assertEqual(cli.main(["query", man, "SELECT COUNT(*) WHERE level >= 3", "--data", csv, "-o", out]), 0)
+            self.assertEqual(cli.main(["verify", out, "--manifest", man]), 0)
+        with open(out) as f:
+            bundle = json.load(f)
+        bundle["result"]["value"] += 1
+        forged = os.path.join(tmp, "forged.json")
+        with open(forged, "w") as f:
+            json.dump(bundle, f)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["verify", forged, "--manifest", man]), 1)
 
 
 if __name__ == "__main__":

@@ -1,33 +1,32 @@
-"""Fast unit tests (no Glass engine required).
+"""Fast unit tests: no proving.
 
-Covers schema encoding, the SQL parser, storage + auth, and the registry's
-request handling including tenant isolation.
+Covers schema encoding, the SQL parser and its plans, the query evaluation the
+guest mirrors, commitments and openings, storage and auth, the registry's
+request handling including tenant isolation, and verification. Verification
+runs the real verifier on a real receipt (tests/fixtures), so tiresias-prover
+must be built; regenerate the fixture with `python3.12 -m tests.make_fixtures`.
 
   python3.12 -m unittest tests.test_unit
 """
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import tempfile
 import time
 import unittest
 
-# Keep the registry database out of the home directory: config reads this at import.
-os.environ.setdefault("TIRESIAS_DB", os.path.join(tempfile.mkdtemp(prefix="tiresias-test-"), "registry.db"))
+# Keep the registry database and openings out of the home directory: config reads these at import.
+_TMP = tempfile.mkdtemp(prefix="tiresias-test-")
+os.environ.setdefault("TIRESIAS_DB", os.path.join(_TMP, "registry.db"))
+os.environ.setdefault("TIRESIAS_OPENINGS", os.path.join(_TMP, "openings"))
 
+from tiresias.engine.bundle import ProofBundle
 from tiresias.engine.commit import Manifest
-from tiresias.engine.prover import _check_field_capacity, _check_ranges
-from tiresias.engine.schema import (
-    Column,
-    ColType,
-    Dataset,
-    TiresiasFieldError,
-    TiresiasRangeError,
-)
-from tiresias.query.pane_ast import Table, _gstr
+from tiresias.engine.schema import Column, ColType, Dataset
 from tiresias.query import sql
-from tiresias.query.pane_ast import Col, GtE, LitI
 from tiresias.query.spec import (
     AGG_AVG,
     AGG_COUNT,
@@ -35,10 +34,14 @@ from tiresias.query.spec import (
     AGG_MAX,
     AGG_MIN,
     AGG_SUM,
-    QuerySpec,
+    CohortTooSmall,
+    Overflow,
+    answer,
 )
 from tiresias.registry import auth
 from tiresias.registry.store import Store
+
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 
 
 def _manifest() -> Manifest:
@@ -50,11 +53,20 @@ def _manifest() -> Manifest:
             {"name": "salary", "type": "int", "categories": {}},
             {"name": "remote", "type": "bool", "categories": {}},
         ],
-        gamma=918273645,
-        commitment=12345,
+        commitment="ab" * 32,
         row_count=3,
         created_at=time.time(),
     )
+
+
+def fixture_manifest() -> dict:
+    with open(os.path.join(FIXTURES, "payroll.manifest.json")) as f:
+        return json.load(f)
+
+
+def fixture_bundle() -> dict:
+    with open(os.path.join(FIXTURES, "payroll.bundle.json")) as f:
+        return json.load(f)
 
 
 class TestInference(unittest.TestCase):
@@ -89,6 +101,7 @@ class TestSchema(unittest.TestCase):
     def test_encodings(self):
         ci = Column("salary", ColType.INT)
         self.assertEqual(ci.encode("100"), 100)
+        self.assertEqual(ci.encode("-5"), -5)
         cb = Column("remote", ColType.BOOL)
         self.assertEqual(cb.encode("true"), 1)
         self.assertEqual(cb.encode("no"), 0)
@@ -97,120 +110,156 @@ class TestSchema(unittest.TestCase):
         self.assertEqual(cc.encode("sales"), 1)
         self.assertEqual(cc.encode("eng"), 0)  # stable
 
-    def test_overflow_rejected(self):
+    def test_cells_are_64_bit(self):
+        Column("x", ColType.INT).encode(2**63 - 1)
+        Column("x", ColType.INT).encode(-(2**63))
         with self.assertRaises(ValueError):
-            Column("x", ColType.INT).encode(10**12)
+            Column("x", ColType.INT).encode(2**63)
         with self.assertRaises(ValueError):
-            Column("x", ColType.INT).encode(-5)
+            Column("x", ColType.INT).encode(-(2**63) - 1)
 
 
 class TestSqlParser(unittest.TestCase):
     def setUp(self):
         self.m = _manifest()
 
+    def plan(self, q):
+        return sql.parse(q, self.m).plan(self.m)
+
     def test_sum_with_category_filter(self):
         spec = sql.parse("SELECT SUM(salary) WHERE dept = 'eng'", self.m)
-        self.assertEqual(spec.agg, AGG_SUM)
-        self.assertEqual(spec.column, "salary")
-        self.assertIn("EqE", spec.predicate.to_glass())
-        self.assertIn("LitI(0)", spec.predicate.to_glass())  # 'eng' -> 0
+        self.assertEqual((spec.agg, spec.column), (AGG_SUM, "salary"))
+        self.assertEqual(spec.plan(self.m), {
+            "aggregate": {"Sum": {"column": 1}},
+            "filter": {"Cmp": {"column": 0, "op": "Eq", "value": 0}},  # 'eng' -> 0
+            "min_cohort": 5,
+        })
 
     def test_count_and_avg(self):
         self.assertEqual(sql.parse("SELECT COUNT(*)", self.m).agg, AGG_COUNT)
+        self.assertEqual(self.plan("SELECT COUNT(*)")["aggregate"], "Count")
+        self.assertEqual(self.plan("SELECT AVG(salary)")["aggregate"], {"Avg": {"column": 1}})
         self.assertEqual(sql.parse("SELECT AVG(salary)", self.m).agg, AGG_AVG)
 
-    def test_range_and_boolean(self):
-        spec = sql.parse(
-            "SELECT SUM(salary) WHERE salary > 100 AND remote = 'true'", self.m
-        )
-        g = spec.predicate.to_glass()
-        self.assertIn("AndE", g)
-        self.assertIn("GtE", g)
+    def test_operators_and_connectives(self):
+        f = self.plan("SELECT SUM(salary) WHERE salary > 100 AND remote = 'true' OR salary <= -3")["filter"]
+        self.assertEqual(f, {"Or": [
+            {"And": [{"Cmp": {"column": 1, "op": "Gt", "value": 100}},
+                     {"Cmp": {"column": 2, "op": "Eq", "value": 1}}]},
+            {"Cmp": {"column": 1, "op": "Le", "value": -3}}]})
+        for op, name in (("=", "Eq"), ("!=", "Ne"), ("<", "Lt"), (">", "Gt"), ("<=", "Le"), (">=", "Ge")):
+            self.assertEqual(self.plan(f"SELECT COUNT(*) WHERE salary {op} 7")["filter"]["Cmp"]["op"], name)
 
     def test_bad_query(self):
-        with self.assertRaises(sql.SqlError):
-            sql.parse("DELETE FROM t", self.m)
-        with self.assertRaises(sql.SqlError):
-            sql.parse("SELECT SUM(*)", self.m)
+        for q in ("DELETE FROM t", "SELECT SUM(*)", "SELECT SUM(salary) WHERE salary = 99999999999999999999"):
+            with self.assertRaises(sql.SqlError, msg=q):
+                sql.parse(q, self.m)
+        with self.assertRaises(KeyError):
+            sql.parse("SELECT SUM(salary) WHERE dept = 'nope'", self.m)
 
     def test_min_max(self):
         self.assertEqual(sql.parse("SELECT MIN(salary)", self.m).agg, AGG_MIN)
         self.assertEqual(sql.parse("SELECT MAX(salary)", self.m).agg, AGG_MAX)
+        self.assertEqual(self.plan("SELECT MAX(salary)")["aggregate"], {"Max": {"column": 1}})
 
     def test_group_by(self):
         spec = sql.parse("SELECT dept, SUM(salary) GROUP BY dept", self.m)
-        self.assertEqual(spec.agg, AGG_GROUPBY)
-        self.assertEqual(spec.group_key, "dept")
-        self.assertEqual(spec.column, "salary")
-        # GROUP BY on a non-categorical column is refused
-        with self.assertRaises(sql.SqlError):
+        self.assertEqual((spec.agg, spec.group_key, spec.column), (AGG_GROUPBY, "dept", "salary"))
+        self.assertEqual(spec.plan(self.m)["aggregate"],
+                         {"GroupSum": {"column": 1, "key": 0, "codes": [0, 1]}})
+        with self.assertRaises(sql.SqlError):  # GROUP BY on a non-categorical column
             sql.parse("SELECT SUM(salary) GROUP BY salary", self.m)
 
-
-class TestRangeGuard(unittest.TestCase):
-    def _ds(self):
-        return Dataset(
-            columns=[Column("level", ColType.INT), Column("salary", ColType.INT)],
-            rows=[[2, 90000], [6, 210000]],
-        )
-
-    def test_comparison_columns(self):
-        spec = QuerySpec(agg=AGG_SUM, column="salary",
-                         predicate=GtE(Col("salary"), LitI(100)))
-        self.assertEqual(spec.comparison_columns(), {"salary"})
-        self.assertEqual(
-            QuerySpec(agg=AGG_MIN, column="level", predicate=None).comparison_columns(),
-            {"level"},
-        )
-
-    def test_range_guard(self):
-        ds = self._ds()
-        # MIN on a small-domain column is fine
-        _check_ranges(ds, QuerySpec(agg=AGG_MIN, column="level", predicate=None))
-        # MIN on out-of-range values is refused with a clear error
-        with self.assertRaises(TiresiasRangeError):
-            _check_ranges(ds, QuerySpec(agg=AGG_MIN, column="salary", predicate=None))
-        # a > filter on out-of-range values is refused too
-        with self.assertRaises(TiresiasRangeError):
-            _check_ranges(
-                ds, QuerySpec(agg=AGG_SUM, column="level",
-                              predicate=GtE(Col("salary"), LitI(100))),
-            )
+    def test_the_plan_carries_the_cohort_floor(self):
+        self.m.min_cohort = 9
+        self.assertEqual(self.plan("SELECT COUNT(*)")["min_cohort"], 9)
 
 
-class TestFieldCapacity(unittest.TestCase):
-    def test_oversized_sum_refused(self):
-        # three values near the safe max -> total exceeds the field prime
-        big = 1_000_000_000
-        ds = Dataset(columns=[Column("amt", ColType.INT)],
-                     rows=[[big], [big], [big]])
-        with self.assertRaises(TiresiasFieldError):
-            _check_field_capacity(ds, QuerySpec(agg=AGG_SUM, column="amt", predicate=None))
+class TestEvaluation(unittest.TestCase):
+    """The Python twin of the guest's `answer` (zkvm/core/src/lib.rs), on the same vectors."""
 
-    def test_normal_sum_ok(self):
-        ds = Dataset(columns=[Column("amt", ColType.INT)],
-                     rows=[[185000], [150000], [210000]])
-        _check_field_capacity(ds, QuerySpec(agg=AGG_SUM, column="amt", predicate=None))
-        # COUNT has no summed column, so never triggers
-        _check_field_capacity(ds, QuerySpec(agg=AGG_COUNT, column=None, predicate=None))
+    ROWS = [[0, 100], [0, 200], [0, 300], [1, -50], [1, 70], [2, 9]]
+
+    def run_(self, aggregate, flt=None, k=1, rows=None):
+        return answer({"aggregate": aggregate, "filter": flt, "min_cohort": k}, rows or self.ROWS)
+
+    def eq(self, column, value):
+        return {"Cmp": {"column": column, "op": "Eq", "value": value}}
+
+    def test_count_sum_avg_min_max(self):
+        self.assertEqual(self.run_("Count"), {"Count": {"count": 6}})
+        self.assertEqual(self.run_({"Sum": {"column": 1}}, self.eq(0, 0), 3), {"Sum": {"sum": 600, "cohort": 3}})
+        self.assertEqual(self.run_({"Avg": {"column": 1}}, self.eq(0, 1), 2), {"Avg": {"sum": 20, "count": 2, "avg": 10}})
+        self.assertEqual(self.run_({"Min": {"column": 1}}), {"Min": {"value": -50, "cohort": 6}})
+        self.assertEqual(self.run_({"Max": {"column": 1}}), {"Max": {"value": 300, "cohort": 6}})
+
+    def test_avg_floors_toward_negative_infinity(self):
+        self.assertEqual(self.run_({"Avg": {"column": 1}}, None, 1, [[1, -7], [1, 0]]),
+                         {"Avg": {"sum": -7, "count": 2, "avg": -4}})
+
+    def test_operators(self):
+        for op, n in (("Eq", 1), ("Ne", 5), ("Lt", 4), ("Gt", 1), ("Le", 5), ("Ge", 2)):
+            got = self.run_("Count", {"Cmp": {"column": 1, "op": op, "value": 200}})
+            self.assertEqual(got, {"Count": {"count": n}}, op)
+        lt = {"Cmp": {"column": 1, "op": "Lt", "value": 100}}
+        self.assertEqual(self.run_("Count", {"Or": [lt, {"Cmp": {"column": 1, "op": "Ge", "value": 300}}]}),
+                         {"Count": {"count": 4}})
+        self.assertEqual(self.run_("Count", {"And": [lt, {"Not": self.eq(0, 2)}]}), {"Count": {"count": 2}})
+
+    def test_group_by_withholds_small_groups(self):
+        got = self.run_({"GroupSum": {"column": 1, "key": 0, "codes": [0, 1, 2]}}, None, 2)
+        self.assertEqual(got, {"Groups": {"groups": [{"code": 0, "sum": 600, "cohort": 3},
+                                                     {"code": 1, "sum": 20, "cohort": 2}],
+                                          "suppressed": [2]}})
+
+    def test_refusals(self):
+        with self.assertRaises(CohortTooSmall):
+            self.run_({"Sum": {"column": 1}}, self.eq(0, 2), 2)
+        with self.assertRaises(Overflow):
+            self.run_({"Sum": {"column": 1}}, None, 1, [[0, 2**63 - 1], [0, 1]])
 
 
-class TestSourceEscaping(unittest.TestCase):
-    def test_gstr_escapes_control_and_quotes(self):
-        s = _gstr('a"b\\c\nd\te')
-        self.assertNotIn("\n", s)  # raw newline must not survive
-        self.assertNotIn("\t", s)
-        self.assertIn('\\"', s)
-        self.assertIn("\\\\", s)
-        self.assertIn("\\n", s)
+class TestCommitment(unittest.TestCase):
+    def dataset(self):
+        return Dataset(columns=[Column("dept", ColType.CATEGORY, {"eng": 0}), Column("salary", ColType.INT)],
+                       rows=[[0, 100], [0, 200], [0, 300]])
 
-    def test_malicious_column_name_stays_quoted(self):
-        # a header trying to break out of the Pair("...", ...) wrapper
-        evil = '"),Pair("x'
-        glass = Table(columns=[evil], rows=[[1]]).to_glass()
-        # the injected quote is escaped, so it cannot start a new Pair
-        self.assertIn('\\"', glass)
-        self.assertNotIn('"),Pair("x"', glass)
+    def test_a_fresh_salt_hides_identical_rows(self):
+        from tiresias.engine.commit import commit_dataset
+
+        a, b = self.dataset(), self.dataset()
+        ma, mb = commit_dataset(a, "x", min_cohort=1), commit_dataset(b, "x", min_cohort=1)
+        self.assertNotEqual(ma.commitment, mb.commitment)
+        self.assertEqual(len(ma.commitment), 64)
+        self.assertNotIn("100", ma.to_json().replace(ma.commitment, ""))
+
+    def test_the_commitment_binds_every_cell_and_the_schema(self):
+        from tiresias.engine.commit import commitment, schema_of
+
+        ds = self.dataset()
+        salt = bytes(32)
+        base = commitment(salt, schema_of(ds), ds.rows)
+        self.assertNotEqual(base, commitment(salt, schema_of(ds), [[0, 100], [0, 200], [0, 301]]))
+        self.assertNotEqual(base, commitment(bytes([1]) + bytes(31), schema_of(ds), ds.rows))
+        renamed = schema_of(ds)
+        renamed[1]["name"] = "pay"
+        self.assertNotEqual(base, commitment(salt, renamed, ds.rows))
+
+    def test_the_opening_is_private_and_must_match(self):
+        from tiresias.engine.commit import (OpeningMismatch, check_opening, commit_dataset,
+                                            load_opening, save_opening)
+
+        ds = self.dataset()
+        m = commit_dataset(ds, "x", min_cohort=1)
+        path = save_opening(m.dataset_id, ds.salt)
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        self.assertEqual(load_opening(m.dataset_id), ds.salt)
+        check_opening(ds, m)
+        ds.rows[0][1] += 1
+        with self.assertRaises(OpeningMismatch):
+            check_opening(ds, m)
+        with self.assertRaises(OpeningMismatch):
+            load_opening("ds_never_committed")
 
 
 class TestStoreAuth(unittest.TestCase):
@@ -234,7 +283,7 @@ class TestStoreAuth(unittest.TestCase):
     def test_tenant_isolation(self):
         a = self.store.create_org("A")
         b = self.store.create_org("B")
-        man = {"dataset_id": "ds1", "commitment": 9, "gamma": 1, "schema": [], "name": "x"}
+        man = {"dataset_id": "ds1", "commitment": 9, "schema": [], "name": "x"}
         self.store.put_manifest(a, man)
         self.assertIsNotNone(self.store.get_manifest(a, "ds1"))
         self.assertIsNone(self.store.get_manifest(b, "ds1"))  # B cannot see A's data
@@ -279,34 +328,39 @@ class TestRegistryHandle(unittest.TestCase):
         self.server.STORE.close()
 
     def _manifest_dict(self):
-        return {
-            "dataset_id": "ds_x", "name": "x", "commitment": 514343249,
-            "gamma": 918273645, "schema": [{"name": "salary", "type": "int", "categories": {}}], "row_count": 8, "created_at": time.time(),
-            "engine_version": "t", "crypto_grade": "educational", "disclosure": "d",
-        }
+        return fixture_manifest()
 
-    def _bundle_dict(self, commitment=514343249):
-        return {
-            "bundle_id": "pb_x", "dataset_id": "ds_x", "commitment": commitment,
-            "gamma": 918273645, "query": "SELECT SUM(salary)", "result": {"value": 350000, "cohort": 8},
-            "accepted": True, "created_at": time.time(), "engine_version": "t",
-            "crypto_grade": "educational", "disclosure": "d",
-        }
+    def _bundle_dict(self):
+        return fixture_bundle()
 
-    def test_register_and_bind(self):
+    def test_register_and_verify(self):
         code, _ = self.server.handle("POST", "/api/manifests", self.org, self._manifest_dict())
         self.assertEqual(code, 200)
         code, payload = self.server.handle("POST", "/api/bundles", self.org, self._bundle_dict())
         self.assertEqual(code, 200)
-        self.assertTrue(payload["verification"]["ok"])  # binds to published commitment
+        self.assertTrue(payload["verification"]["ok"], payload["verification"])
+        _, listed = self.server.handle("GET", "/api/bundles", self.org, {})
+        self.assertNotIn("receipt", listed["bundles"][0])  # listings stay small
+        self.assertTrue(listed["bundles"][0]["_verified"])
 
-    def test_wrong_commitment_rejected(self):
-        self.server.handle("POST", "/api/manifests", self.org, self._manifest_dict())
-        code, payload = self.server.handle(
-            "POST", "/api/bundles", self.org, self._bundle_dict(commitment=999)
-        )
+    def test_a_bundle_against_another_commitment_fails(self):
+        other = dict(self._manifest_dict(), commitment="cd" * 32)
+        self.server.handle("POST", "/api/manifests", self.org, other)
+        code, payload = self.server.handle("POST", "/api/bundles", self.org, self._bundle_dict())
         self.assertEqual(code, 200)
-        self.assertFalse(payload["verification"]["ok"])  # binding fails
+        self.assertFalse(payload["verification"]["ok"])
+        failed = [c["name"] for c in payload["verification"]["checks"] if not c["passed"]]
+        self.assertEqual(failed, ["proved over the published commitment"])
+
+    def test_a_bundle_needs_a_receipt_and_an_image_id(self):
+        from tiresias.registry.server import ApiError
+
+        self.server.handle("POST", "/api/manifests", self.org, self._manifest_dict())
+        for change in ({"receipt": None}, {"receipt": "not base64!"}, {"image_id": "xyz"}):
+            with self.assertRaises(ApiError, msg=str(change)):
+                self.server.handle("POST", "/api/bundles", self.org, {**self._bundle_dict(), **change})
+        with self.assertRaises(ApiError):
+            self.server.handle("POST", "/api/manifests", self.org, {**self._manifest_dict(), "commitment": 7})
 
     def test_bundle_without_manifest_rejected(self):
         from tiresias.registry.server import ApiError
@@ -407,8 +461,7 @@ class TestHardening(unittest.TestCase):
         try:
             org = store.create_org("Acme")
             for i in range(3):
-                store.put_manifest(org, {"dataset_id": f"ds{i}", "commitment": i,
-                                         "gamma": 1, "schema": [], "name": f"d{i}"})
+                store.put_manifest(org, {"dataset_id": f"ds{i}", "commitment": i, "schema": [], "name": f"d{i}"})
             self.assertEqual(len(store.list_manifests(org, limit=2)), 2)
             self.assertEqual(len(store.list_manifests(org, limit=2, offset=2)), 1)
             self.assertEqual(store.stats(org)["datasets"], 3)
@@ -422,8 +475,7 @@ class TestHardening(unittest.TestCase):
         server.STORE = Store(os.path.join(tmp, "r.db"))
         try:
             org = server.STORE.create_org("Acme")
-            server.STORE.put_manifest(org, {"dataset_id": "ds0", "commitment": 1,
-                                            "gamma": 1, "schema": [], "name": "d"})
+            server.STORE.put_manifest(org, {"dataset_id": "ds0", "commitment": 1, "schema": [], "name": "d"})
             gs = server.STORE.global_stats()
             self.assertEqual(gs["orgs"], 1)
             self.assertEqual(gs["datasets"], 1)
@@ -441,8 +493,7 @@ class TestHardening(unittest.TestCase):
         try:
             org = server.STORE.create_org("Acme")
             for i in range(3):
-                server.STORE.put_manifest(org, {"dataset_id": f"ds{i}", "commitment": i,
-                                                "gamma": 1, "schema": [], "name": f"d{i}"})
+                server.STORE.put_manifest(org, {"dataset_id": f"ds{i}", "commitment": i, "schema": [], "name": f"d{i}"})
             _, payload = server.handle("GET", "/api/manifests", org, {}, {"limit": "1"})
             self.assertEqual(len(payload["manifests"]), 1)
         finally:
@@ -457,30 +508,24 @@ class TestShares(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         server.STORE = Store(os.path.join(self.tmp, "r.db"))
         self.org = server.STORE.create_org("Acme")
-        man = {
-            "dataset_id": "ds_x", "name": "x", "commitment": 514343249,
-            "gamma": 918273645, "schema": [{"name": "salary", "type": "int", "categories": {}}], "row_count": 8, "created_at": time.time(),
-            "engine_version": "t", "crypto_grade": "educational", "disclosure": "d",
-        }
-        bundle = {
-            "bundle_id": "pb_x", "dataset_id": "ds_x", "commitment": 514343249,
-            "gamma": 918273645, "query": "SELECT SUM(salary)", "result": {"value": 350000, "cohort": 8},
-            "accepted": True, "created_at": time.time(), "engine_version": "t",
-            "crypto_grade": "educational", "disclosure": "d",
-        }
-        server.handle("POST", "/api/manifests", self.org, man)
-        server.handle("POST", "/api/bundles", self.org, bundle)
+        self.bundle = fixture_bundle()
+        server.handle("POST", "/api/manifests", self.org, fixture_manifest())
+        server.handle("POST", "/api/bundles", self.org, self.bundle)
 
     def tearDown(self):
         self.server.STORE.close()
 
     def test_share_and_public_view(self):
-        _, resp = self.server.handle("POST", "/api/bundles/pb_x/share", self.org, {})
-        token = resp["token"]
-        payload = self.server.public_share_payload(token)  # public, no auth
-        self.assertEqual(payload["bundle"]["bundle_id"], "pb_x")
-        self.assertTrue(payload["verification"]["ok"])  # binding holds
+        bid = self.bundle["bundle_id"]
+        _, resp = self.server.handle("POST", f"/api/bundles/{bid}/share", self.org, {})
+        payload = self.server.public_share_payload(resp["token"])  # public, no auth
+        self.assertEqual(payload["bundle"]["bundle_id"], bid)
+        self.assertTrue(payload["verification"]["ok"])
         self.assertNotIn("rows", payload["bundle"])  # never any rows
+        # the whole proof and manifest, so anyone can verify it on their own machine
+        from tiresias.engine.verify import verify_bundle
+        mine = verify_bundle(ProofBundle(**payload["bundle"]), Manifest(**payload["manifest"]))
+        self.assertTrue(mine.ok)
 
     def test_unknown_share_token(self):
         from tiresias.registry.server import ApiError
@@ -524,13 +569,9 @@ class TestConfig(unittest.TestCase):
         self.assertTrue(any("MAX_PAGE_SIZE" in p for p in found))
 
     def test_problems_are_scoped_to_their_reader(self):
-        env = {"TIRESIAS_GAMMA": "1"}
-        self.assertEqual(self.config.problems(env, scope="registry"), [])
-        self.assertEqual(len(self.config.problems(env, scope="prover")), 1)
-
-    def test_gamma_bound_matches_the_commitment_field(self):
-        from tiresias.engine.schema import FIELD_PRIME
-        self.assertEqual(self.config._FIELD_PRIME, FIELD_PRIME)
+        env = {"TIRESIAS_PORT": "x"}
+        self.assertEqual(len(self.config.problems(env, scope="registry")), 1)
+        self.assertEqual(self.config.problems(env, scope="prover"), [])
 
     def test_configuration_doc_is_generated_from_the_schema(self):
         path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "configuration.md")
@@ -548,89 +589,6 @@ class TestConfig(unittest.TestCase):
             rc = cli.main(["serve"])
         self.assertEqual(rc, 2)
         self.assertIn("TIRESIAS_PORT", err.getvalue())
-
-
-class TestGlassPin(unittest.TestCase):
-    """Tiresias proves only with the Glass files it pins."""
-
-    def setUp(self):
-        from unittest import mock
-
-        from tiresias.engine import glass_pin
-
-        self.pin = glass_pin
-        self.tmp = tempfile.mkdtemp(prefix="tiresias-glass-")
-        os.makedirs(os.path.join(self.tmp, "examples", "prove"))
-        self.files = {"glass.py": b"MARKER = 'pinned'\n", "examples/prove/prove_pane.glass": b"0\n"}
-        for rel, data in self.files.items():
-            with open(os.path.join(self.tmp, rel), "wb") as f:
-                f.write(data)
-        import hashlib
-
-        pins = {rel: hashlib.sha256(data).hexdigest() for rel, data in self.files.items()}
-        self.patches = [
-            mock.patch.object(glass_pin, "PINNED_FILES", pins),
-            mock.patch.object(glass_pin, "_verified_root", None),
-            mock.patch.object(glass_pin, "_glass_module", None),
-            mock.patch.dict(os.environ, {"TIRESIAS_GLASS_DIR": self.tmp, "TIRESIAS_GLASS_UNPINNED": "0"}),
-        ]
-        for p in self.patches:
-            p.start()
-
-    def tearDown(self):
-        for p in reversed(self.patches):
-            p.stop()
-
-    def test_a_matching_checkout_is_accepted(self):
-        self.assertEqual(self.pin.mismatches(self.tmp), [])
-        self.assertEqual(self.pin.glass_root(), self.tmp)
-
-    def test_a_changed_file_is_refused_by_name(self):
-        with open(os.path.join(self.tmp, "examples", "prove", "prove_pane.glass"), "ab") as f:
-            f.write(b"# changed\n")
-        with self.assertRaises(self.pin.GlassPinError) as ctx:
-            self.pin.glass_root()
-        self.assertIn("prove_pane.glass", str(ctx.exception))
-
-    def test_unpinned_allows_a_changed_checkout(self):
-        from unittest import mock
-
-        with open(os.path.join(self.tmp, "glass.py"), "ab") as f:
-            f.write(b"# changed\n")
-        with mock.patch.dict(os.environ, {"TIRESIAS_GLASS_UNPINNED": "1"}):
-            self.assertEqual(self.pin.glass_root(), self.tmp)
-
-    def test_the_verified_file_is_loaded_even_if_another_glass_is_imported(self):
-        import sys
-        import types
-        from unittest import mock
-
-        impostor = types.ModuleType("glass")
-        impostor.MARKER = "impostor"
-        with mock.patch.dict(sys.modules, {"glass": impostor}):
-            self.assertEqual(self.pin.load_glass().MARKER, "pinned")
-
-    def test_fetch_clones_the_pinned_tag(self):
-        import shutil
-        import subprocess
-
-        if shutil.which("git") is None:
-            self.skipTest("git not installed")
-        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
-        for cmd in (["git", "init", "-q"], ["git", "add", "-A"], ["git", "commit", "-qm", "glass"], ["git", "tag", "v-test"]):
-            subprocess.run(cmd, cwd=self.tmp, check=True, env=env, capture_output=True)
-        target = os.path.join(tempfile.mkdtemp(prefix="tiresias-fetch-"), "glass", "v-test")
-        self.pin.fetch_release(target, repository=self.tmp, tag="v-test")
-        self.assertEqual(self.pin.mismatches(target), [])
-
-    def test_an_unreachable_release_is_a_clear_error(self):
-        import shutil
-
-        if shutil.which("git") is None:
-            self.skipTest("git not installed")
-        target = os.path.join(tempfile.mkdtemp(prefix="tiresias-fetch-"), "glass", "v-none")
-        with self.assertRaises(self.pin.GlassPinError):
-            self.pin.fetch_release(target, repository=os.path.join(self.tmp, "no-such-repo"), tag="v-none")
 
 
 class TestRegistryHttp(unittest.TestCase):
@@ -737,7 +695,7 @@ class TestRegistryHttp(unittest.TestCase):
     def test_ids_must_be_short_word_strings(self):
         import json as _json
 
-        body = _json.dumps({"dataset_id": ["x"], "commitment": 1, "gamma": 1, "schema": []}).encode()
+        body = _json.dumps({"dataset_id": ["x"], "commitment": "ab" * 32, "min_cohort": 1, "schema": []}).encode()
         status, payload, _ = self.request(
             "POST", "/api/manifests", self.auth({"Content-Length": str(len(body))}), body
         )
@@ -767,64 +725,112 @@ class TestRegistryHttp(unittest.TestCase):
         self.assertEqual(statuses, [404, 404, 429])
 
 
-class TestCohortPolicy(unittest.TestCase):
-    """Tier 1 checks, from public data alone, that every answer meets min_cohort."""
+class TestVerify(unittest.TestCase):
+    """The real verifier on a real receipt: each forgery fails, and names its check."""
 
-    def manifest(self, k=5):
-        return Manifest(
-            dataset_id="ds_c", name="c",
-            schema=[
-                {"name": "dept", "type": "category", "categories": {"eng": 0, "ops": 1}},
-                {"name": "salary", "type": "int", "categories": {}},
-            ],
-            gamma=918273645, commitment=7, row_count=12, created_at=0.0, min_cohort=k,
-        )
-
-    def bundle(self, query, result):
-        from tiresias.engine.bundle import ProofBundle
-
-        return ProofBundle(
-            bundle_id="pb_c", dataset_id="ds_c", commitment=7, gamma=918273645,
-            query=query, result=result, accepted=True, created_at=0.0,
-        )
-
-    def tier1(self, query, result, k=5):
+    def check(self, bundle_change=None, manifest_change=None):
         from tiresias.engine.verify import verify_bundle
 
-        return verify_bundle(self.bundle(query, result), self.manifest(k))
+        b, m = fixture_bundle(), fixture_manifest()
+        if bundle_change:
+            bundle_change(b)
+        if manifest_change:
+            manifest_change(m)
+        r = verify_bundle(ProofBundle(**b), Manifest(**m))
+        return r.ok, [name for name, passed, _ in r.checks if not passed]
 
-    def test_a_large_enough_cohort_passes(self):
-        self.assertTrue(self.tier1("SELECT SUM(salary)", {"value": 10, "cohort": 5}).ok)
+    def test_the_fixture_verifies(self):
+        self.assertEqual(self.check(), (True, []))
 
-    def test_a_small_or_missing_cohort_fails(self):
-        self.assertFalse(self.tier1("SELECT SUM(salary)", {"value": 10, "cohort": 4}).ok)
-        self.assertFalse(self.tier1("SELECT SUM(salary)", {"value": 10}).ok)
+    def test_the_fixture_is_this_guest(self):
+        # Fails when the guest changed, or was not built reproducibly: rebuild in Docker,
+        # or regenerate with `python3.12 -m tests.make_fixtures`.
+        from tiresias.engine import zkvm
 
-    def test_a_count_must_equal_its_cohort(self):
-        self.assertTrue(self.tier1("SELECT COUNT(*)", {"value": 6, "cohort": 6}).ok)
-        self.assertFalse(self.tier1("SELECT COUNT(*)", {"value": 6, "cohort": 9}).ok)
+        self.assertEqual(zkvm.image_id(), fixture_bundle()["image_id"])
 
-    def test_group_by_must_partition_the_categories(self):
-        q = "SELECT dept, SUM(salary) GROUP BY dept"
-        good = {"group_by": "dept", "column": "salary", "groups": {"eng": 50},
-                "cohorts": {"eng": 7}, "suppressed": ["ops"]}
-        self.assertTrue(self.tier1(q, good).ok)
-        dropped = dict(good, suppressed=[])  # ops silently missing
-        self.assertFalse(self.tier1(q, dropped).ok)
-        small = dict(good, cohorts={"eng": 2})
-        self.assertFalse(self.tier1(q, small).ok)
+    def test_the_prover_trusts_the_pinned_guest(self):
+        from tiresias.engine import zkvm
+
+        root = os.path.dirname(FIXTURES)
+        with open(os.path.join(root, "..", "zkvm", "pinned", "image-id")) as f:
+            self.assertEqual(zkvm.image_id(), f.read().strip())
+
+    def test_a_changed_answer_fails(self):
+        def inflate(b):
+            b["result"]["groups"]["eng"] += 1
+        self.assertEqual(self.check(inflate), (False, ["the stated answer is the proved answer"]))
+
+    def test_a_withheld_group_cannot_be_dropped_or_revealed(self):
+        def drop(b):
+            b["result"]["suppressed"] = []
+        def reveal(b):
+            b["result"]["groups"]["ops"] = 1
+            b["result"]["cohorts"]["ops"] = 3
+            b["result"]["suppressed"] = []
+        self.assertFalse(self.check(drop)[0])
+        self.assertFalse(self.check(reveal)[0])
+
+    def test_a_changed_cohort_fails(self):
+        def lie(b):
+            b["result"]["cohorts"]["eng"] = 30
+        self.assertEqual(self.check(lie), (False, ["the stated answer is the proved answer"]))
+
+    def test_a_different_query_fails(self):
+        def other(b):
+            b["query"] = "SELECT dept, SUM(level) GROUP BY dept"
+        ok, failed = self.check(other)
+        self.assertFalse(ok)
+        self.assertIn("proved this query, under this dataset's cohort floor", failed)
+
+    def test_a_laxer_cohort_floor_fails(self):
+        def lax(m):
+            m["min_cohort"] = 2
+        ok, failed = self.check(manifest_change=lax)
+        self.assertFalse(ok)
+        self.assertIn("proved this query, under this dataset's cohort floor", failed)
+
+    def test_another_schema_fails(self):
+        def retype(m):
+            m["schema"][3]["type"] = "int"  # remote: not in the query, only in the schema
+        self.assertEqual(self.check(manifest_change=retype), (False, ["proved under the published schema"]))
+
+    def test_a_receipt_for_another_dataset_fails_cleanly(self):
+        def other(m):
+            m["schema"][0]["categories"] = {"x": 7}
+        ok, failed = self.check(manifest_change=other)
+        self.assertFalse(ok)
+        self.assertIn("proved this query, under this dataset's cohort floor", failed)
+        self.assertIn("the stated answer is the proved answer", failed)
+
+    def test_another_commitment_fails(self):
+        def other(m):
+            m["commitment"] = "00" * 32
+        self.assertEqual(self.check(manifest_change=other), (False, ["proved over the published commitment"]))
+
+    def test_a_damaged_or_missing_receipt_fails(self):
+        def flip(b):
+            raw = bytearray(base64.b64decode(b["receipt"]))
+            raw[len(raw) // 2] ^= 1
+            b["receipt"] = base64.b64encode(bytes(raw)).decode()
+        def empty(b):
+            b["receipt"] = ""
+        def garbled(b):
+            b["receipt"] = "not base64!"
+        for change in (flip, empty, garbled):
+            self.assertEqual(self.check(change), (False, ["the receipt verifies"]), change.__name__)
 
     def test_the_policy_is_part_of_the_dataset_id(self):
         from tiresias.engine.commit import _dataset_id
 
-        schema = self.manifest().schema
-        self.assertNotEqual(_dataset_id(schema, 7, 5), _dataset_id(schema, 7, 3))
+        schema = fixture_manifest()["schema"]
+        self.assertNotEqual(_dataset_id(schema, "ab" * 32, 5), _dataset_id(schema, "ab" * 32, 3))
 
     def test_min_cohort_must_be_positive(self):
         from tiresias.engine.commit import commit_dataset
 
         with self.assertRaises(ValueError):
-            commit_dataset(Dataset(columns=[]), name="x", gamma=1, min_cohort=0)
+            commit_dataset(Dataset(columns=[Column("a", ColType.INT)], rows=[[1]]), name="x", min_cohort=0)
 
 
 class TestPageSources(unittest.TestCase):
@@ -841,7 +847,8 @@ class TestPageSources(unittest.TestCase):
         files = glob.glob(os.path.join(self.WEB, "static", "*.js"))
         self.assertGreaterEqual(len(files), 4)
         for f in files:
-            src = open(f, encoding="utf-8").read()
+            with open(f, encoding="utf-8") as fh:
+                src = fh.read()
             for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"):
                 self.assertNotIn(sink, src, f"{os.path.basename(f)} uses {sink}")
             self.assertIsNone(re.search(r"setAttribute\(\s*['\"]on", src), f)
@@ -853,7 +860,8 @@ class TestPageSources(unittest.TestCase):
         pages = glob.glob(os.path.join(self.WEB, "*.html")) + glob.glob(os.path.join(self.REG, "*.html"))
         self.assertGreaterEqual(len(pages), 4)
         for f in pages:
-            src = open(f, encoding="utf-8").read()
+            with open(f, encoding="utf-8") as fh:
+                src = fh.read()
             self.assertIsNone(re.search(r"<script(?![^>]*\bsrc=)[^>]*>", src), f"{f}: inline <script>")
             self.assertIsNone(re.search(r"\son[a-z]+\s*=", src), f"{f}: inline handler")
             self.assertIsNone(re.search(r"\sstyle\s*=", src), f"{f}: inline style")
@@ -869,11 +877,11 @@ class TestWorkbench(unittest.TestCase):
         self.w = server
 
     def test_types_are_guessed_from_the_values(self):
-        info = self.w.api_inspect({"csv": "dept,level,remote,flag\neng,5,true,1\nops,2,false,0\n"})
+        info = self.w.api_inspect({"csv": "dept,level,remote,flag,delta\neng,5,true,1,-3\nops,2,false,0,4\n"})
         self.assertEqual({c["name"]: c["guess"] for c in info["columns"]},
-                         {"dept": "category", "level": "int", "remote": "bool", "flag": "bool"})
+                         {"dept": "category", "level": "int", "remote": "bool", "flag": "bool", "delta": "int"})
         self.assertEqual(info["rows"], 2)
-        self.assertEqual(info["preview"][0], ["eng", "5", "true", "1"])
+        self.assertEqual(info["preview"][0], ["eng", "5", "true", "1", "-3"])
 
     def test_malformed_csv_is_refused_with_a_reason(self):
         for text, reason in (("", "header"), ("a,a\n1,2\n", "duplicate"), ("a,b\n1\n", "number of fields"),

@@ -1,10 +1,9 @@
-"""Dataset schema and field encoding.
+"""Dataset schema and cell encoding.
 
-Glass's proving field on the Pane path is the 31-bit prime 2^31 - 1 (Mersenne-31), so every value
-that enters a circuit must be a small non-negative integer. This module maps a
-human dataset (ints, booleans, categorical strings) onto that field and records
-the encoding so queries can be written in human terms ("dept = 'eng'") and
-lowered to field terms ("dept == 0").
+The guest proves over 64-bit integers, so every cell is one: integers as they
+are, booleans as 0 and 1, and categorical labels as small codes. This module
+maps a human dataset onto that encoding and records it, so queries can be
+written in human terms ("dept = 'eng'") and compiled to codes ("dept == 0").
 """
 
 from __future__ import annotations
@@ -13,33 +12,11 @@ import csv
 from dataclasses import dataclass, field
 from enum import Enum
 
-# The 31-bit prime 2^31 - 1 used by examples/prove/prove_pane.glass.
-FIELD_PRIME = 2147483647
-# Headroom: aggregates (sums) must also stay below the prime. We warn well before.
-SAFE_VALUE_MAX = FIELD_PRIME // 2
-# Glass's comparison gadget (lt_gadget) assumes operands in [0, 2^16). So MIN/MAX
-# and < / > range filters only work on columns whose values stay under this.
-# Equality filters and SUM/COUNT/AVG have no such limit.
-RANGE_MAX = 65536
-
-
-class CohortTooSmall(ValueError):
-    """The query describes fewer rows than the dataset's minimum cohort, so its
-    answer could single someone out. Refused rather than proven."""
-
-
-class TiresiasRangeError(ValueError):
-    """A comparison (MIN/MAX or < / >) was requested on values that exceed the
-    educational comparison gadget's range."""
-
-
-class TiresiasFieldError(ValueError):
-    """An aggregate could exceed the proving field, so the proof would be over
-    modular (wrapped) arithmetic rather than the exact integer (unsound)."""
+from tiresias.query.spec import I64_MAX, I64_MIN
 
 
 class ColType(str, Enum):
-    INT = "int"  # non-negative integer, used directly as a field element
+    INT = "int"  # a 64-bit integer
     BOOL = "bool"  # 0 / 1
     CATEGORY = "category"  # small set of labels, encoded to integer codes
 
@@ -94,17 +71,9 @@ class Column:
             if key not in self.categories:
                 self.categories[key] = len(self.categories)
             return self.categories[key]
-        # INT
         v = int(raw)
-        if v < 0:
-            raise ValueError(
-                f"column {self.name!r}: negative values unsupported on the field path ({v})"
-            )
-        if v > SAFE_VALUE_MAX:
-            raise ValueError(
-                f"column {self.name!r}: value {v} exceeds safe field range "
-                f"(< {SAFE_VALUE_MAX}); the educational 31-bit field cannot hold it"
-            )
+        if not I64_MIN <= v <= I64_MAX:
+            raise ValueError(f"column {self.name!r}: {v} does not fit in 64 bits")
         return v
 
     def code_for(self, label: str | int | bool) -> int:
@@ -126,12 +95,13 @@ class Column:
 class Dataset:
     """A private table: an ordered schema plus encoded integer rows.
 
-    The rows are the secret. Only the schema, category maps, and (later) the
-    commitment are ever made public.
+    The rows are the secret, and so is the salt that opens their commitment.
+    Only the schema, the category codes and the commitment are made public.
     """
 
     columns: list[Column]
     rows: list[list[int]] = field(default_factory=list)
+    salt: bytes | None = None
 
     @property
     def column_names(self) -> list[str]:
@@ -161,9 +131,3 @@ class Dataset:
         for raw in raw_rows:
             ds.rows.append([by_name[h].encode(raw[h]) for h in headers])
         return ds
-
-    def to_pane_table(self):
-        """Project onto the Pane AST (all cells are encoded ints)."""
-        from tiresias.query.pane_ast import Table
-
-        return Table(columns=self.column_names, rows=[list(r) for r in self.rows])

@@ -1,24 +1,25 @@
 # Roadmap
 
-Tiresias stands on Glass, and the two are raised together as one temple. The full staged plan, with the exit gate of every step, is in the [Glass roadmap](https://github.com/EgorKhaklin/Glass/blob/main/docs/roadmap.md). This page lists the parts that are Tiresias's own.
+Tiresias and Glass are raised together as one temple; the full staged plan, with the exit gate of every step, is in the [Glass roadmap](https://github.com/EgorKhaklin/Glass/blob/main/docs/roadmap.md). Tiresias proves with the audited RISC Zero zkVM rather than waiting for Glass's own audited backend. This page lists the parts that are Tiresias's own.
 
 | Stage | Temple part | For Tiresias |
 |---|---|---|
 | I | Euthynteria, the leveling course | The `tiresias` name in code, 1.0.0, a lean tree. Done. |
-| II | Stylobate, the platform | Glass pinned by tag and SHA-256, fetched and verified (done); registry settings validated at boot (done); release automation (done). |
+| II | Stylobate, the platform | The prover's guest pinned and rebuilt byte for byte in CI (done); registry settings validated at boot (done); release automation (done). |
 | III | Peristyle, the columns | The engine, the privacy of the answer, the registry as a service (below). |
-| IV | Architrave, the beam | End to end on the audited backend with zero-knowledge, verified without the data. |
+| IV | Architrave, the beam | End to end on an audited backend with zero-knowledge, verified without the data. Done, on RISC Zero. |
 | V | Frieze, the carved story | Docs, a ten-minute walkthrough, a design partner on notional data. |
-| VI | Pediment, the gable | External audit of the query circuits and the registry; 2.0.0. |
+| VI | Pediment, the gable | External audit of the guest program, the verifier's checks and the registry. |
 | VII | Acroterion, the apex | One recursive proof over many datasets. |
 
 ## The engine
 
-Tiresias proves today through Glass's older query path: a 31-bit field (2^31 − 1), comparisons below 65,536, sums below the field, and a proof that only someone holding the data can re-check.
+Tiresias proves in the RISC Zero zkVM (3.0.6): a guest program recomputes the salted SHA-256 commitment, answers the query over 64-bit integers, and enforces the cohort floor; anyone verifies the succinct, zero-knowledge receipt without the data.
 
-- [ ] Move onto Glass's sound Goldilocks path (`verify_b3`, 64-bit field, wider comparisons). Gate: every query type round-trips.
-- [ ] Witness-free verification: `tiresias verify <bundle>` checks the proof itself with no data and no account, and Lens, Glass's independent verifier, agrees. Gate: the public link runs this check.
-- [ ] Move onto the audited backend with zero-knowledge once Glass's Column 1 lands. Tiresias never ships a proof mode that is not zero-knowledge.
+- [x] Witness-free verification: `tiresias verify <bundle>` checks the proof itself with no data and no account, and the public link runs the same check.
+- [x] An audited backend with zero-knowledge: RISC Zero's zkVM (audited by Hexens and Veridise). Tiresias ships no proof mode that is not zero-knowledge: the verifier accepts only succinct receipts.
+- [ ] Faster proofs: about a minute today, almost all of it RISC Zero's fixed recursion cost.
+- [ ] Prove with Glass again if Glass's own audited backend lands and matches these guarantees.
 
 ## The privacy of the answer
 

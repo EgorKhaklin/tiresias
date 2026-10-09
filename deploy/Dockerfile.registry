@@ -1,16 +1,23 @@
-# The Tiresias registry server. Engine-free by design: it verifies bundle bindings
-# (witness-free) and never receives raw data or runs the Glass prover, so the
-# image needs no Glass and no third-party packages.
+# The Tiresias registry server. It never receives raw data and never proves: it
+# verifies each bundle's RISC Zero receipt with tiresias-prover, built here from
+# zkvm/ (the pinned guest is embedded, so this build needs no Docker of its own).
+FROM rust:1.99 AS prover
+WORKDIR /src
+COPY zkvm ./zkvm
+RUN cargo build --release --locked --manifest-path zkvm/Cargo.toml -p tiresias-prover
+
 FROM python:3.12-slim
 
 WORKDIR /app
 COPY pyproject.toml ./
 COPY tiresias ./tiresias
 RUN pip install --no-cache-dir .
+COPY --from=prover /src/zkvm/target/release/tiresias-prover /usr/local/bin/tiresias-prover
 
 ENV TIRESIAS_HOST=0.0.0.0 \
     TIRESIAS_PORT=8765 \
     TIRESIAS_DB=/data/registry.db \
+    TIRESIAS_PROVER=/usr/local/bin/tiresias-prover \
     TIRESIAS_LOG_LEVEL=INFO
 
 VOLUME ["/data"]

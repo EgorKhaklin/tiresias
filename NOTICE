@@ -4,24 +4,14 @@ Copyright 2026 Egor Khaklin
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
 ----------------------------------------------------------------------
-Dependency: Glass
+Dependency: RISC Zero zkVM
 ----------------------------------------------------------------------
 
-Tiresias is built on and depends, at runtime, on Glass, a self-hosting verifiable
-functional language with a from-scratch zk-STARK toolkit, which performs ALL of
-the cryptographic proving in Tiresias. Tiresias does not reimplement any cryptography; it
-generates Glass programs and executes them with the Glass engine.
+Tiresias proves every answer with the RISC Zero zero-knowledge virtual machine.
+Its prover binary, tiresias-prover (zkvm/), links the risc0-zkvm crates, and its
+guest program is built with risc0-build in RISC Zero's guest builder image.
+Proving runs in RISC Zero's r0vm, installed separately with rzup.
 
-  Glass: https://github.com/EgorKhaklin/Glass
-  Copyright 2026 Egor Khaklin
-  Licensed under the Apache License, Version 2.0, or the MIT License.
-
-Glass is NOT bundled with Tiresias. It is resolved at runtime from the path given by
-the TIRESIAS_GLASS_DIR environment variable (default: ~/Desktop/Glass). Only Tiresias's
-local prover invokes Glass; the registry server is engine-free.
-
-----------------------------------------------------------------------
-
-The cryptography provided by Glass is EDUCATIONAL-GRADE: a working demonstration,
-not production-hardened security. See Glass's docs/security/soundness.md. Every artifact
-Tiresias produces is labeled `crypto-grade: educational`.
+  RISC Zero: https://github.com/risc0/risc0
+  Copyright RISC Zero, Inc.
+  Licensed under the Apache License, Version 2.0.

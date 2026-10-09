@@ -3,7 +3,7 @@
     python assets/logo.py        (writes the SVGs next to this file)
 
 Tiresias is the seer of Thebes who knew the truth without seeing it. The mark is the crystal of
-Glass, the language Tiresias is built on, with its spokes kept and its body filled with rows of
+Glass, Tiresias's sibling project, with its spokes kept and its body filled with rows of
 cells: a committed dataset. The rows show for a moment and then frost over, because they are
 never revealed. In a clear window at the centre stands a sigma, the aggregate, with a diamond
 under it for the proof that it is true. Ink, line weight and the diamonds follow the house style

@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["core", "host", "methods"]
+# The prover embeds the pinned guest (pinned/), so building it needs no Docker.
+# `./pin-guest.sh` rebuilds the guest itself (tiresias-methods) and re-pins it.
+default-members = ["core", "host"]
+
+# The guest is always built optimized; so is everything that runs it.
+[profile.dev]
+opt-level = 3
+
+[profile.release]
+lto = true

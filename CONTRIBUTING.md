@@ -4,38 +4,41 @@ Thanks for your interest in Tiresias.
 
 ## Setup
 
-Tiresias needs **Python 3.12** and the pinned [Glass](https://github.com/EgorKhaklin/Glass)
-release, which does all the proving:
+Tiresias needs **Python 3.12**, **Rust** (rustup; `zkvm/rust-toolchain.toml` pins the
+version) and RISC Zero's **r0vm 3.0.6**, which does the proving:
 
 ```bash
 pip install -e .
-tiresias glass --fetch                       # the pinned Glass, fetched and verified
-python3.12 -m unittest discover -s tests     # unit tests, plus the engine round trip
-python3.12 -m tiresias.demo                  # full narrated demo
+curl -L https://risczero.com/install | bash && rzup install r0vm 3.0.6
+cargo build --release --manifest-path zkvm/Cargo.toml   # tiresias-prover
+python3.12 -m unittest tests.test_unit                  # fast, on a committed real receipt
+python3.12 -m unittest tests.test_engine                # real proofs, about a minute each
+cargo test --manifest-path zkvm/Cargo.toml -p tiresias-core
+python3.12 -m tiresias.demo                             # the narrated demo
 ```
 
-To prove with a Glass checkout of your own, set `TIRESIAS_GLASS_DIR`. It must match the
-pinned files (`tiresias glass` shows which differ); `TIRESIAS_GLASS_UNPINNED=1` allows a
-differing checkout while you develop both. Moving to a new Glass release means updating
-`GLASS_TAG` and `PINNED_FILES` in `tiresias/engine/glass_pin.py` and rerunning the tests.
+The prover embeds the pinned guest (`zkvm/pinned`), so building it needs no Docker. After
+changing the guest (`zkvm/methods/guest` or `zkvm/core`), run `zkvm/pin-guest.sh`: it
+rebuilds the guest in RISC Zero's Docker image, re-pins it, and rebuilds the prover. Then
+regenerate the test fixture with `python3.12 -m tests.make_fixtures`, and commit both.
 
-Tiresias itself has **no third-party Python dependencies**; keep it that way.
+The Python package itself has **no third-party dependencies**; keep it that way.
 
 ## Principles
 
 - **Honesty over hype.** This product sells *verifiability*; never overclaim what a
-  proof guarantees. The cryptography is educational-grade: say so. Every artifact
-  carries `crypto-grade: educational`.
-- **Never modify the Glass repo.** Extend via Tiresias-owned drivers; slice Glass
-  functions at runtime rather than copying them, and prove only with the pinned files.
-- **The registry stays engine-free.** It stores and verifies bindings; it must never
-  receive raw rows or run the prover.
-- **Fail loudly, not silently.** If a query can't be proven soundly (e.g. a sum that
-  overflows the field, a comparison out of range), refuse with a clear error rather
-  than emit a wrong/unsound result.
+  proof guarantees. Say what rests on RISC Zero and what rests on Tiresias's own code.
+- **The guest is the contract.** Every query semantic lives in `zkvm/core`; the Python in
+  `tiresias/query/spec.py` mirrors it for refusals and is checked against it on every proof.
+  Change both together, with tests on both sides.
+- **The registry never proves.** It stores manifests and bundles and verifies receipts;
+  it must never receive raw rows or a commitment's opening.
+- **Fail loudly, not silently.** If a query cannot be proven (too few rows, a sum past
+  64 bits), refuse with a clear error rather than emit a wrong answer.
 
 ## Pull requests
 
-- Add or update tests in `tests/` (CI runs `tests.test_unit`).
+- Add or update tests in `tests/` (CI runs both suites and the guest's Rust tests, and
+  rebuilds the pinned guest to check it is byte for byte the same).
 - Run the suite and the demo before opening a PR.
 - Keep diffs focused; match the existing style.

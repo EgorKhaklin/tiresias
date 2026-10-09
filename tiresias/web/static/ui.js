@@ -37,8 +37,12 @@ window.T = (() => {
   }
   const CHECK = {
     "dataset id matches manifest": "The proof names this dataset",
-    "answer bound to published commitment": "The answer is bound to the published commitment",
-    "gamma matches manifest": "The commitment's public challenge matches",
+    "the query is a Tiresias query over this dataset": "The question is one this dataset can answer",
+    "the receipt verifies": "The RISC Zero receipt verifies",
+    "proved over the published commitment": "It was proved over the published commitment",
+    "proved under the published schema": "It was proved under the published schema",
+    "proved this query, under this dataset's cohort floor": "It proves this question, under this dataset's floor",
+    "the stated answer is the proved answer": "The answer shown is the answer proved",
     "every answer describes at least min_cohort rows": "Every answer describes at least the minimum cohort",
   };
   function checks(v) {

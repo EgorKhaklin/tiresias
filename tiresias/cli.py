@@ -2,11 +2,11 @@
 
   tiresias commit <csv> --name N [--types dept=category,remote=bool] -o manifest.json
   tiresias query  <manifest.json> "SELECT SUM(salary) WHERE dept='eng'" --data <csv> -o bundle.json
-  tiresias verify <bundle.json> --manifest manifest.json [--data <csv>]
+  tiresias verify <bundle.json> --manifest manifest.json   (or a downloaded shared answer)
   tiresias demo
 
-The data CSV stays on the data-holder's machine. Only manifests and proof
-bundles are meant to travel.
+The data CSV, and the opening `commit` writes beside it, stay on the data
+holder's machine. Only manifests and proof bundles are meant to travel.
 """
 
 from __future__ import annotations
@@ -16,14 +16,13 @@ import os
 import sys
 
 from tiresias import config
-from tiresias.engine.commit import DEFAULT_MIN_COHORT, Manifest, commit_dataset, load_aligned
+from tiresias.engine.commit import DEFAULT_MIN_COHORT, Manifest, commit_dataset, load_aligned, save_opening
 from tiresias.engine.prover import prove
 from tiresias.engine.schema import ColType, Dataset
 from tiresias.engine.verify import verify_bundle
 from tiresias.engine.bundle import ProofBundle
 from tiresias.query import sql
 
-DEFAULT_GAMMA = config.GAMMA
 EXAMPLE_CSV = os.path.join(os.path.dirname(__file__), "..", "examples", "payroll.csv")
 
 
@@ -39,39 +38,50 @@ def _parse_types(s: str | None) -> dict[str, ColType]:
 
 def cmd_commit(args) -> int:
     ds = Dataset.from_csv(args.csv, _parse_types(args.types))
-    manifest = commit_dataset(ds, name=args.name, gamma=args.gamma, min_cohort=args.min_cohort)
+    manifest = commit_dataset(ds, name=args.name, min_cohort=args.min_cohort)
     out = args.out or f"{manifest.dataset_id}.manifest.json"
     manifest.save(out)
+    assert ds.salt is not None
+    opening = save_opening(manifest.dataset_id, ds.salt)
     schema = ", ".join(f"{c['name']}:{c['type']}" for c in manifest.schema)
     print(f"committed {manifest.row_count} rows -> {out}")
     print(f"  dataset_id : {manifest.dataset_id}")
     print(f"  commitment : {manifest.commitment}")
     print(f"  schema     : {schema}")
     print(f"  min cohort : {manifest.min_cohort} rows per answer")
-    print(f"  crypto     : {manifest.crypto_grade}")
+    print(f"  opening    : {opening}")
+    print("               (private: keep it with the data; proving needs it)")
     return 0
 
 
 def cmd_query(args) -> int:
     manifest = Manifest.load(args.manifest)
-    ds = load_aligned(args.data, manifest)
+    ds = load_aligned(args.data, manifest, args.opening)
     spec = sql.parse(args.sql, manifest)
     bundle = prove(ds, spec, manifest)
     out = args.out or f"{bundle.bundle_id}.bundle.json"
     bundle.save(out)
     print(f"query: {bundle.query}")
     print(f"  answer  : {bundle.result}")
-    print(f"  proof   : {'ACCEPT' if bundle.accepted else 'REJECT'}")
+    print(f"  proof   : RISC Zero receipt, {len(bundle.receipt) * 3 // 4 // 1024} KB, guest {bundle.image_id[:16]}")
     print(f"  bundle  : {out}")
     return 0
 
 
 def cmd_verify(args) -> int:
-    bundle = ProofBundle.load(args.bundle)
-    manifest = Manifest.load(args.manifest)
-    ds = load_aligned(args.data, manifest) if args.data else None
-    result = verify_bundle(bundle, manifest, ds)
-    print(f"verifying bundle {bundle.bundle_id}  (tier: {result.tier})")
+    import json
+
+    with open(args.bundle) as f:
+        doc = json.load(f)
+    if "bundle" in doc and "manifest" in doc:  # a shared answer, downloaded whole
+        bundle, manifest = ProofBundle(**doc["bundle"]), Manifest(**doc["manifest"])
+    elif args.manifest:
+        bundle, manifest = ProofBundle(**doc), Manifest.load(args.manifest)
+    else:
+        print("tiresias verify: pass --manifest, or a shared answer that carries its manifest", file=sys.stderr)
+        return 2
+    result = verify_bundle(bundle, manifest)
+    print(f"verifying bundle {bundle.bundle_id}")
     for name, passed, detail in result.checks:
         mark = "PASS" if passed else "FAIL"
         extra = f"  [{detail}]" if detail else ""
@@ -103,26 +113,32 @@ def cmd_serve(args) -> int:
             print(f"  {problem}", file=sys.stderr)
         print("`tiresias config` lists every setting with its default.", file=sys.stderr)
         return 2
+    from tiresias.engine import zkvm
+
+    if not zkvm.available():
+        print("tiresias serve: the registry verifies every receipt with tiresias-prover, which is "
+              "not built. Run `cargo build --release` in zkvm/ or set TIRESIAS_PROVER.", file=sys.stderr)
+        return 2
     from tiresias.registry.server import serve
 
     serve(args.host, args.port)
     return 0
 
 
-def cmd_glass(args) -> int:
-    from tiresias.engine import glass_pin
+def cmd_prover(args) -> int:
+    from tiresias.engine import zkvm
 
-    if args.fetch:
-        try:
-            root = glass_pin.resolve(fetch=True)
-        except glass_pin.GlassPinError as e:
-            print(f"tiresias glass: {e}", file=sys.stderr)
-            return 1
-        print(f"fetched:  {root}")
-    for line in glass_pin.describe():
-        print(line)
-    root = glass_pin.resolve(fetch=False)
-    return 0 if root is not None and not glass_pin.mismatches(root) else 1
+    try:
+        path = zkvm.binary()
+        image = zkvm.image_id()
+    except (zkvm.ProverUnavailable, RuntimeError) as e:
+        print(f"tiresias prover: {e}", file=sys.stderr)
+        return 1
+    print(f"prover   : {path}")
+    print(f"zkvm     : RISC Zero {zkvm.RISC0_VERSION}")
+    print(f"guest    : {image}")
+    print("           (receipts verify only against this image id)")
+    return 0
 
 
 def cmd_config(args) -> int:
@@ -163,7 +179,7 @@ def cmd_remote_commit(args) -> int:
     from tiresias.client.local_prover import commit_and_register
 
     manifest = commit_and_register(
-        args.csv, _parse_types(args.types), args.name, args.gamma, _client(args),
+        args.csv, _parse_types(args.types), args.name, _client(args),
         min_cohort=args.min_cohort,
     )
     print("committed locally and registered (rows never left this machine):")
@@ -177,16 +193,14 @@ def cmd_remote_query(args) -> int:
     from tiresias.client.local_prover import query_and_submit
 
     bundle, verification = query_and_submit(
-        args.dataset_id, args.sql, args.data, _client(args)
+        args.dataset_id, args.sql, args.data, _client(args), opening=args.opening
     )
-    print(f"proved locally and uploaded bundle (rows never left this machine):")
+    print("proved locally and uploaded bundle (rows never left this machine):")
     print(f"  query    : {bundle.query}")
     print(f"  answer   : {bundle.result}")
-    print(f"  proof    : {'ACCEPT' if bundle.accepted else 'REJECT'}")
     print(f"  bundle   : {bundle.bundle_id}")
     if verification is not None:
-        print(f"  registry : {'VERIFIED' if verification['ok'] else 'REJECTED'} "
-              f"({verification['tier']})")
+        print(f"  registry : {'VERIFIED' if verification['ok'] else 'REJECTED'}")
     return 0
 
 
@@ -252,7 +266,6 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("csv")
     c.add_argument("--name", default="dataset")
     c.add_argument("--types", help="col=type,... (int|bool|category)")
-    c.add_argument("--gamma", type=int, default=DEFAULT_GAMMA)
     c.add_argument("--min-cohort", type=int, default=DEFAULT_MIN_COHORT,
                     help="refuse answers about fewer rows (default %(default)s)")
     c.add_argument("-o", "--out")
@@ -262,13 +275,13 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("manifest")
     q.add_argument("sql")
     q.add_argument("--data", required=True, help="the committed CSV (stays local)")
+    q.add_argument("--opening", help="the dataset's opening (default: where commit wrote it)")
     q.add_argument("-o", "--out")
     q.set_defaults(func=cmd_query)
 
-    v = sub.add_parser("verify", help="verify a proof bundle")
-    v.add_argument("bundle")
-    v.add_argument("--manifest", required=True)
-    v.add_argument("--data", help="committed CSV; enables Tier 2 (reproducible)")
+    v = sub.add_parser("verify", help="verify a proof bundle, without the data")
+    v.add_argument("bundle", help="a bundle, or a shared answer downloaded from a registry")
+    v.add_argument("--manifest", help="the dataset's manifest (a shared answer carries its own)")
     v.set_defaults(func=cmd_verify)
 
     d = sub.add_parser("demo", help="run the end-to-end demo on the sample dataset")
@@ -284,9 +297,8 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--port", type=int, default=config.REGISTRY_PORT)
     sv.set_defaults(func=cmd_serve)
 
-    gl = sub.add_parser("glass", help="show the pinned Glass release and whether the checkout matches it")
-    gl.add_argument("--fetch", action="store_true", help="clone the pinned release if it is not present")
-    gl.set_defaults(func=cmd_glass)
+    pv = sub.add_parser("prover", help="show the prover binary and the guest image id it trusts")
+    pv.set_defaults(func=cmd_prover)
 
     cf = sub.add_parser("config", help="print every setting's effective value; exit 1 on a problem")
     cf.set_defaults(func=cmd_config)
@@ -302,7 +314,6 @@ def build_parser() -> argparse.ArgumentParser:
     rc.add_argument("csv")
     rc.add_argument("--name", default="dataset")
     rc.add_argument("--types", help="col=type,... (int|bool|category)")
-    rc.add_argument("--gamma", type=int, default=DEFAULT_GAMMA)
     rc.add_argument("--min-cohort", type=int, default=DEFAULT_MIN_COHORT,
                     help="refuse answers about fewer rows (default %(default)s)")
     rc.add_argument("--registry", help=f"default {config.REGISTRY_URL}")
@@ -315,6 +326,7 @@ def build_parser() -> argparse.ArgumentParser:
     rq.add_argument("dataset_id")
     rq.add_argument("sql")
     rq.add_argument("--data", required=True, help="the committed CSV (stays local)")
+    rq.add_argument("--opening", help="the dataset's opening (default: where commit wrote it)")
     rq.add_argument("--registry", help=f"default {config.REGISTRY_URL}")
     rq.add_argument("--key", help="API key (or set TIRESIAS_API_KEY)")
     rq.set_defaults(func=cmd_remote_query)
@@ -344,15 +356,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
-    from tiresias.engine.schema import CohortTooSmall, TiresiasRangeError
+    from tiresias.engine import zkvm
+    from tiresias.engine.commit import OpeningMismatch
+    from tiresias.query.spec import CohortTooSmall, Overflow
     from tiresias.query.sql import SqlError
 
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (SqlError, TiresiasRangeError, CohortTooSmall) as e:
+    except (SqlError, CohortTooSmall, Overflow, zkvm.Refused) as e:
         print(f"query error: {e}", file=sys.stderr)
         return 2
+    except (OpeningMismatch, zkvm.ProverUnavailable) as e:
+        print(f"tiresias: {e}", file=sys.stderr)
+        return 1
     except Exception as e:  # surface a clean message, not a traceback
         from tiresias.client.registry_client import RegistryError
 

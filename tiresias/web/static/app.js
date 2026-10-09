@@ -15,8 +15,12 @@
   // The engine's check names, in plain words.
   const CHECK = {
     "dataset id matches manifest": "The proof names this dataset",
-    "answer bound to published commitment": "The answer is bound to the published commitment",
-    "gamma matches manifest": "The commitment's public challenge matches",
+    "the query is a Tiresias query over this dataset": "The question is one this dataset can answer",
+    "the receipt verifies": "The RISC Zero receipt verifies",
+    "proved over the published commitment": "It was proved over the published commitment",
+    "proved under the published schema": "It was proved under the published schema",
+    "proved this query, under this dataset's cohort floor": "It proves this question, under this dataset's floor",
+    "the stated answer is the proved answer": "The answer shown is the answer proved",
     "every answer describes at least min_cohort rows": "Every answer describes at least the minimum cohort",
   };
   const OPS = {
@@ -295,7 +299,7 @@
       h("div", { class: "tablet-head" }, h("div", { class: "row" }, h("span", { class: "muted", text: "Asking" }), datasetPick,
         h("span", { class: "faint small", text: "· floor " + m.min_cohort + " rows" })), editToggle),
       builderBox, sqlEdit, h("div", { class: "stack actions" }, english, sqlView),
-      h("div", { class: "row actions" }, run, h("span", { class: "muted small", text: "Proving takes a few seconds; MIN and MAX take longer." }))), out);
+      h("div", { class: "row actions" }, run, h("span", { class: "muted small", text: "Proving runs on this machine and takes about a minute." }))), out);
     if (state.focus) { renderAnswer(out, state.focus.bundle, state.focus.english); }
     return page;
   }
@@ -305,10 +309,11 @@
   }
   async function ask(m, sql, english, out, run) {
     run.disabled = true;
-    out.replaceChildren(h("div", { class: "tablet", style: null }, oracle("Proving over the committed rows…")));
+    out.replaceChildren(h("div", { class: "tablet", style: null }, oracle("Proving in the zkVM over the committed rows. About a minute…")));
     out.firstChild.style.marginTop = "18px";
     try {
       const r = await api("POST", "/api/query", { dataset_id: m.dataset_id, sql });
+      r.bundle.receipt_bytes = r.receipt_bytes;
       state.focus = { bundle: r.bundle, english };
       await refresh();
       renderAnswer(out, r.bundle, english);
@@ -339,43 +344,42 @@
       if (r.avg !== undefined) parts.push("total " + NUM.format(r.sum) + ", rounded down to a whole number");
       card.append(h("div", { class: "c", text: parts.join(" · ") }));
     }
-    card.append(h("div", { class: "row", style: null }, bundle.accepted ? seal("ok", "Proved") : seal("bad", "Proof rejected"),
-      h("span", { class: "small muted" }, "bound to commitment ", h("span", { class: "mono", text: String(bundle.commitment) }))));
+    card.append(h("div", { class: "row", style: null }, seal("ok", "Proved"),
+      h("span", { class: "small muted" }, "over commitment ", h("span", { class: "mono", text: String(bundle.commitment).slice(0, 16) + "…" }))));
     card.lastChild.style.justifyContent = "center"; card.lastChild.style.marginTop = "18px";
     return card;
   }
   function renderAnswer(out, bundle, english) {
     const verify = h("div");
-    const tier2 = h("button", { class: "btn small", type: "button", onclick: () => runVerify(bundle, true, verify, tier2) }, "Re-run the proof with the data");
+    const again = h("button", { class: "btn small", type: "button", onclick: () => runVerify(bundle, verify, again) }, "Verify again");
     const tamper = h("button", { class: "btn quiet small", type: "button", onclick: () => runTamper(bundle, verify, tamper) }, "Tamper test");
     out.replaceChildren(h("div", {}, answerCard(bundle, english)),
       h("div", { class: "tablet gap" },
         h("div", { class: "tablet-head" }, h("h2", { text: "Verification" }),
-          h("div", { class: "row" }, tier2, tamper,
+          h("div", { class: "row" }, again, tamper,
             h("a", { class: "btn small", href: "/api/bundles/" + encodeURIComponent(bundle.bundle_id) + ".json", download: "" }, "Download proof"))),
         verify));
     out.firstChild.style.marginTop = "18px";
-    runVerify(bundle, false, verify, null);
+    runVerify(bundle, verify, null);
   }
-  async function runVerify(bundle, withData, box, btn) {
+  async function runVerify(bundle, box, btn) {
     if (btn) btn.disabled = true;
-    box.replaceChildren(oracle(withData ? "Re-running the proof with the data…" : "Checking the binding…"));
+    box.replaceChildren(oracle("Verifying the receipt…"));
     try {
-      const r = (await api("POST", "/api/verify", { bundle_id: bundle.bundle_id, with_data: withData })).result;
-      box.replaceChildren(checks(r, withData));
+      const r = (await api("POST", "/api/verify", { bundle_id: bundle.bundle_id })).result;
+      box.replaceChildren(checks(r));
     } catch (e) { box.replaceChildren(notice("bad", "Verification could not run.", e.message)); }
     finally { if (btn) btn.disabled = false; }
   }
-  function checks(r, withData, forgery) {
-    const title = withData ? "Reproducible: re-proving over the committed rows gives this answer" : "Bound: the answer is tied to the published commitment";
+  function checks(r, forgery) {
     const head = forgery ? h("p", { class: "small muted", text: "What the verifier found in the forged bundle:" })
-      : h("div", { class: "row" }, r.ok ? seal("ok", withData ? "Re-proved" : "Binding holds") : seal("bad", "Failed"), h("span", { class: "muted small", text: title }));
+      : h("div", { class: "row" }, r.ok ? seal("ok", "Verified") : seal("bad", "Failed"), h("span", { class: "muted small", text: "checked from the receipt and the manifest, without the data" }));
     return h("div", {}, head,
       h("ul", { class: "checks" }, ...r.checks.map((c) => h("li", {},
         h("span", { class: "mark " + (c.passed ? "ok" : "bad"), "aria-label": c.passed ? "passed" : "failed", text: c.passed ? "✓" : "✕" }),
         h("div", {}, h("div", { text: CHECK[c.name] || c.name }), c.detail ? h("div", { class: "detail", text: c.detail }) : null)))),
       r.note ? h("p", { class: "small muted", text: r.note }) : null,
-      withData ? null : h("p", { class: "small muted", text: "Anyone can run this check without the data. Re-running the proof needs the rows, so only the data holder can." }));
+      forgery ? null : h("p", { class: "small muted", text: "Anyone holding the downloaded proof and the manifest can run this check: tiresias verify." }));
   }
   async function runTamper(bundle, box, btn) {
     btn.disabled = true;
@@ -385,7 +389,7 @@
       box.replaceChildren(h("div", {},
         h("div", { class: "row" }, t.result.ok ? seal("bad", "The forgery passed") : seal("ok", "Forgery rejected"),
           h("span", { class: "muted small", text: "The answer was changed from " + NUM.format(t.original) + " to " + NUM.format(t.forged) + " and verified again." })),
-        checks(t.result, true, true)));
+        checks(t.result, true)));
     } catch (e) { box.replaceChildren(notice("bad", "The tamper test could not run.", e.message)); }
     finally { btn.disabled = false; }
   }
@@ -398,7 +402,7 @@
   }
   function viewProofs() {
     const page = h("section", {}, h("p", { class: "eyebrow", text: "Proofs" }), h("h1", { text: "Proofs from this session" }),
-      h("p", { class: "lede", text: "Each proof is a bundle you can download and hand to anyone: the question, the answer, the cohort, and the commitment it is bound to. Never a row." }),
+      h("p", { class: "lede", text: "Each proof is a bundle you can download and hand to anyone: the question, the answer, its cohort, and the receipt that proves them over the commitment. Never a row." }),
       h("div", { class: "meander", "aria-hidden": "true" }));
     if (!state.bundles.length) {
       page.append(h("div", { class: "tablet empty" }, h("h3", { text: "No proofs yet" }), h("p", { text: "Ask a question and its proof appears here." }), h("a", { class: "btn primary", href: "#/ask" }, "Ask a question")));
@@ -411,7 +415,7 @@
         h("td", { class: "num", text: summary(b.result) }),
         h("td", { text: (dataset(b.dataset_id) || { name: "?" }).name }),
         h("td", { class: "muted small", text: when(b.created_at) }),
-        h("td", {}, b.accepted ? seal("ok", "Proved") : seal("bad", "Rejected")));
+        h("td", {}, seal("ok", "Proved")));
       const open = () => { renderAnswer(detail, b, b.query); detail.scrollIntoView({ behavior: "smooth", block: "start" }); };
       tr.addEventListener("click", open); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") open(); });
       return tr;
@@ -428,20 +432,19 @@
       h("p", { class: "lede", text: "Tiresias, the seer of Thebes, answered truly without seeing. The workbench answers questions about rows it keeps to itself, and attaches a proof that the answer is honest." }),
       h("div", { class: "meander", "aria-hidden": "true" }),
       h("div", { class: "steps" },
-        h("div", {}, h("h3", { text: "Commit" }), h("p", { class: "muted", text: "The rows are fingerprinted into a commitment and published as a manifest: the schema, the row count and the minimum cohort. No row is in it." })),
-        h("div", {}, h("h3", { text: "Ask" }), h("p", { class: "muted", text: "A question is proved where the data lives. The answer carries a proven count of the rows it describes; below the floor, Tiresias declines." })),
-        h("div", {}, h("h3", { text: "Verify" }), h("p", { class: "muted", text: "Anyone can confirm an answer is bound to the commitment. The data holder can re-run the proof, so a wrong answer cannot pass." }))),
+        h("div", {}, h("h3", { text: "Commit" }), h("p", { class: "muted", text: "The rows are sealed into a salted SHA-256 commitment and published as a manifest: the schema, the row count and the minimum cohort. No row is in it, and the commitment reveals nothing about them." })),
+        h("div", {}, h("h3", { text: "Ask" }), h("p", { class: "muted", text: "A question is proved where the data lives, in the RISC Zero zkVM: a program reads the rows, checks them against the commitment, answers, and refuses any answer about fewer rows than the floor." })),
+        h("div", {}, h("h3", { text: "Verify" }), h("p", { class: "muted", text: "Anyone with the proof and the manifest checks the receipt in milliseconds, without the data. A changed answer, query or commitment fails." }))),
       h("div", { class: "meander", "aria-hidden": "true" }),
-      h("h2", { text: "What a proof guarantees today" }),
+      h("h2", { text: "What a proof guarantees" }),
       h("div", { class: "tablet gap" },
         h("table", { class: "table" },
-          h("thead", {}, h("tr", {}, h("th", { text: "Check" }), h("th", { text: "Who can run it" }), h("th", { text: "Guarantee" }))),
+          h("thead", {}, h("tr", {}, h("th", { text: "Property" }), h("th", { text: "Rests on" }))),
           h("tbody", {},
-            h("tr", {}, h("td", { text: "Binding" }), h("td", { text: "anyone, without the data" }), h("td", { text: "the answer is tied to the published commitment" })),
-            h("tr", {}, h("td", { text: "Reproducible" }), h("td", { text: "the data holder" }), h("td", { text: "re-proving yields this answer, so it was not forged" })),
-            h("tr", {}, h("td", { text: "Witness-free" }), h("td", { class: "muted", text: "not yet" }), h("td", { class: "muted", text: "a third party checks the proof itself, without the data" }))))),
-      h("div", { class: "notice warn gap" }, h("b", { text: "Preview: not yet for real secrets." }),
-        "Proofs run on Glass's research prover, over a 31-bit field with an unaudited hash, and they are not yet zero-knowledge. They demonstrate the guarantees above; they are not a vault. Tiresias moves to an audited, zero-knowledge proving system next, and this notice changes when it does."));
+            h("tr", {}, h("td", { text: "The answer is the true answer over the committed rows" }), h("td", { text: "the RISC Zero zkVM's soundness (audited by Hexens and Veridise)" })),
+            h("tr", {}, h("td", { text: "The proof reveals nothing about the rows beyond the answer" }), h("td", { text: "RISC Zero's zero-knowledge receipts and the salted commitment" })),
+            h("tr", {}, h("td", { text: "No answer singles out a few people" }), h("td", { text: "the cohort floor, enforced inside the proof" }))))),
+      h("p", { class: "small muted", text: "Tiresias's own guest program and integration have not yet had an independent audit; SECURITY.md says what is and is not covered." }));
   }
 
   const VIEWS = { datasets: viewDatasets, ask: viewAsk, proofs: viewProofs, about: viewAbout };

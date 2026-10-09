@@ -5,26 +5,25 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tiresias"
 version = "1.0.0"
-description = "Verifiable private analytics: commit a sensitive dataset, answer aggregate queries over it with proofs. Built on Glass."
+description = "Verifiable private analytics: commit a sensitive dataset, answer aggregate queries over it with zero-knowledge proofs from the RISC Zero zkVM."
 authors = [{name = "Egor Khaklin"}]
 license = "Apache-2.0"
 requires-python = ">=3.10"
-keywords = ["zero-knowledge", "privacy", "analytics", "stark", "verifiable-computation", "glass"]
+keywords = ["zero-knowledge", "privacy", "analytics", "zkvm", "risc-zero", "verifiable-computation"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Security :: Cryptography",
     "Programming Language :: Python :: 3 :: Only",
 ]
-# Glass (glass-lang) is the proving engine, needed only by the LOCAL PROVER. It
-# is resolved at runtime from TIRESIAS_GLASS_DIR (default ~/Desktop/Glass) and treated
-# as read-only. The registry server does NOT need it (it verifies bindings only).
-# Pure-stdlib otherwise: no third-party dependencies.
+# Proving and verifying run in tiresias-prover (zkvm/, Rust, on RISC Zero), found
+# through TIRESIAS_PROVER, this checkout's zkvm/target/release, or PATH. The Python
+# package itself has no third-party dependencies.
 dependencies = []
 
 [project.urls]
 Repository = "https://github.com/EgorKhaklin/tiresias"
-"Built on Glass" = "https://github.com/EgorKhaklin/Glass"
+"RISC Zero" = "https://github.com/risc0/risc0"
 
 [project.scripts]
 tiresias = "tiresias.cli:main"

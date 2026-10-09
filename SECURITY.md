@@ -1,35 +1,31 @@
 # Security policy
 
-## Cryptographic maturity: read this first
+## What a proof rests on
 
-Tiresias is, today, a **working demonstration** of verifiable
-private analytics. Its cryptography is **educational-grade**, inherited from
-[Glass](https://github.com/EgorKhaklin/Glass):
+Tiresias does no cryptography of its own beyond SHA-256 commitments. Every proof is a receipt from the [RISC Zero zkVM](https://github.com/risc0/risc0), release 3.0.6, for one guest program: Tiresias's, built reproducibly and pinned in `zkvm/pinned` (its image id is printed by `tiresias prover`).
 
-- Field: the 31-bit prime field 2³¹−1 (Mersenne-31) on the Pane path; values and sums are bounded accordingly.
-- Hash: MiMC / a reduced-round Poseidon (**unaudited**).
-- No parameter analysis, no constant-time guarantees, **no external audit**.
+- **Soundness.** A receipt shows the guest ran to completion on some input and produced its journal: the dataset's commitment, the digest of the schema it was made under, the compiled query with its cohort floor, and the answer. The guest recomputes the commitment from the rows and salt it was given, so the answer is the answer over the committed rows. RISC Zero states 96 to 99 bits of conjectured security for its STARK provers, under the random oracle model and the toy problem conjecture.
+- **Zero knowledge.** Tiresias publishes only succinct receipts (the verifier refuses any other kind), which RISC Zero designs to reveal nothing beyond the journal; the guest commits no row, no salt and no intermediate value. RISC Zero has not published a mathematical proof that its receipts are zero-knowledge (advisory GHSA-5xgj-pmjj-gw49; the prover's zero-knowledge noise was strengthened in 1.1).
+- **Hiding.** The commitment is SHA-256 over a fresh random 32-byte salt and the cells, so it reveals nothing about the rows, even to someone who can guess them.
+- **Audits.** RISC Zero's zkVM was audited by Hexens (the RISC-V and recursion provers, 2023; the STARK-to-SNARK prover, 2024) and by Veridise (the circuits, Zirgen and the recursive verifier, 2024 to 2025). The audits covered earlier releases; 3.0.6 includes the fixes for every soundness issue RISC Zero has disclosed since, among them GHSA-g3qg-6746-3mg9, GHSA-f6rc-24x4-ppxp and GHSA-jqq4-c7wq-36h7.
+- **Not yet audited.** Tiresias's guest program (`zkvm/methods/guest`, `zkvm/core`), the prover binary (`zkvm/host`), and the Python that compiles queries and checks journals have not had an independent audit. The guest is short and its query logic is tested in Rust and, in mirror, in Python.
 
-**Do not use Tiresias to protect real secrets or real value.** Every artifact it
-produces is stamped `crypto-grade: educational`. What *is* rigorous is the
-structural completeness of the zk-STARK and the differential-testing discipline
-behind Glass, not the production-strength of the primitives.
+## The trust boundary
 
-The path to production cryptography (a real field end-to-end, an audited hash,
-parameter analysis, witness-free third-party verification, and an external audit)
-is tracked in the README roadmap and in Glass's `docs/security/soundness.md`. Until those
-land, treat all "proofs" here as demonstrations of the *idea*, not guarantees.
+- **The data holder is not trusted by a verifier.** It proves on its own machine and could run anything there; what it cannot do is produce a receipt for a wrong answer, another query, a laxer cohort floor or other rows than the commitment binds.
+- **What is not proved is where the rows came from.** A commitment shows the answers are consistent with the rows committed, not that those rows are true. Signed manifests are on the roadmap.
+- **The registry is not trusted with data.** It never receives a row or a salt. It verifies every receipt it stores and every shared answer it shows, and anyone can download a shared answer and verify it independently.
+- **The salt is the data holder's to keep.** With it and the rows, anyone can prove; without it, no one can, the holder included.
 
 ## What the architecture does protect (by design)
 
-- The **registry never receives raw rows**: proving runs on the data-holder's
-  machine; only manifests (commitments) and proof bundles (public results) are uploaded.
+- The **registry never receives raw rows**: proving runs on the data holder's
+  machine; only manifests (commitments) and proof bundles (answers and receipts) are uploaded.
+- **Proving never leaves the machine**: `tiresias-prover` links no remote prover and
+  refuses RISC Zero's development mode, so it neither makes nor accepts a fake receipt.
 - **API keys** are stored only as SHA-256 hashes and can be revoked.
-- Aggregates that would exceed the field, and comparisons outside the gadget's
-  range, are **refused** rather than silently producing an unsound result.
-
-These are real engineering properties; they are independent of the
-(educational-grade) cryptographic strength above.
+- An answer about fewer rows than the dataset's floor, and a sum that does not fit in
+  64 bits, are **refused**, in the guest itself, rather than proved.
 
 ## Registry review, October 2026
 
@@ -54,8 +50,8 @@ Each fix has a regression test, and undoing any one of them fails its test.
 
 ## Reporting an issue
 
-This is a research/demonstration project. If you find a correctness or security
-issue, please open an issue on the GitHub repository describing it. Given the
-explicit educational-grade status, cryptographic weaknesses in the underlying
-primitives are expected and documented; reports about the *product layer*
-(auth, tenant isolation, source-generation, data handling) are most useful.
+Please do not put the details of a security issue in a public issue. Open one that asks
+for a private channel, and the details will be taken there. Reports about the guest program, the checks
+`tiresias verify` makes, the registry (authentication, tenant isolation, data handling)
+and the pages are all in scope. An issue in the RISC Zero zkVM itself belongs with RISC
+Zero: see their security policy.

@@ -1,10 +1,9 @@
 # Self-hosted Tiresias registry.
 #
-# The registry stores manifests + proof bundles and verifies bindings. It never
-# sees raw data. Proving runs on the data-holder's own machine via the local
-# prover CLI (`tiresias remote-commit` / `tiresias remote-query`), which needs the Glass
-# engine and is intentionally NOT containerized here: it lives where the data
-# lives.
+# The registry stores manifests and proof bundles and verifies their receipts. It
+# never sees raw data. Proving runs on the data holder's own machine
+# (`tiresias remote-commit` / `tiresias remote-query`), which needs RISC Zero's
+# r0vm and is intentionally NOT containerized here: it lives where the data lives.
 #
 #   docker compose -f deploy/docker-compose.yml up --build
 #   # then provision an org inside the container:

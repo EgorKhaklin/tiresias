@@ -1,0 +1,7 @@
+.git
+zkvm/target
+**/__pycache__
+*.db
+*.opening
+.venv
+venv

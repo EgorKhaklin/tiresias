@@ -27,7 +27,6 @@
       <a href="https://github.com/EgorKhaklin/tiresias">Docs</a>
     </nav>
     <div class="end">
-      <a class="pill" href="#status">Preview</a>
       <button class="iconbtn" id="theme" type="button" aria-label="Switch between light and dark">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm0 1.5v11a5.5 5.5 0 0 1 0-11Z"/></svg>
       </button>
@@ -57,9 +56,9 @@
   <section>
     <p class="eyebrow">How it works</p>
     <div class="steps">
-      <div><h3>Commit</h3><p class="muted">The data holder fingerprints the rows into a commitment and publishes it as a manifest: the schema, the row count and a minimum cohort. No row is in it.</p></div>
-      <div><h3>Ask</h3><p class="muted">Questions are proved where the data lives: totals, counts, averages, extremes and breakdowns. Below the minimum cohort, Tiresias declines rather than answers.</p></div>
-      <div><h3>Verify</h3><p class="muted">The answer travels as a proof bundle. Anyone with the link confirms it is bound to the published commitment, with no account and no access to the data.</p></div>
+      <div><h3>Commit</h3><p class="muted">The data holder seals the rows into a salted SHA-256 commitment and publishes it as a manifest: the schema, the row count and a minimum cohort. No row is in it, and the commitment reveals nothing about them.</p></div>
+      <div><h3>Ask</h3><p class="muted">Questions are proved where the data lives, in the RISC Zero zkVM: totals, counts, averages, extremes and breakdowns. Below the minimum cohort, Tiresias declines rather than answers.</p></div>
+      <div><h3>Verify</h3><p class="muted">The answer travels as a proof bundle. Anyone with the link sees its receipt checked against the published commitment, with no account and no access to the data.</p></div>
     </div>
   </section>
 
@@ -70,7 +69,7 @@
     <div class="grid three">
       <div class="tablet"><h2>Data holders</h2><p class="muted">Share statistics about records you cannot share: payroll, patients, transactions. Publish the commitment once; answer as many questions as you choose.</p></div>
       <div class="tablet"><h2>Analysts</h2><p class="muted">Ask in plain terms or in SQL. Each answer arrives with its cohort and its proof, ready to cite, so nobody has to take the number on trust.</p></div>
-      <div class="tablet"><h2>Auditors</h2><p class="muted">Open a shared link and see the checks run: the answer, the dataset it is bound to, and the commitment that dataset published.</p></div>
+      <div class="tablet"><h2>Auditors</h2><p class="muted">Open a shared link and see the checks run, or download the proof and the manifest and verify them yourself with <span class="mono">tiresias verify</span>.</p></div>
     </div>
   </section>
 
@@ -81,7 +80,8 @@
     <h2>The workbench, then the registry</h2>
     <p class="muted">The workbench runs on the machine that holds the data. Rows never leave it; commitments and proofs go to the registry, which never sees a row.</p>
     <div class="code gap"><span class="c"># on the data holder's machine</span>
-pip install git+https://github.com/EgorKhaklin/tiresias
+git clone https://github.com/EgorKhaklin/tiresias &amp;&amp; cd tiresias &amp;&amp; pip install -e .
+rzup install r0vm 3.0.6 &amp;&amp; cargo build --release --manifest-path zkvm/Cargo.toml
 tiresias app                                          <span class="c"># commit a CSV, ask, verify: http://127.0.0.1:8765</span>
 
 <span class="c"># publishing to a registry</span>
@@ -93,25 +93,25 @@ tiresias share &lt;bundle&gt;                               <span class="c"># a 
   <div class="meander" aria-hidden="true"></div>
 
   <section id="status">
-    <p class="eyebrow">What a proof guarantees today</p>
+    <p class="eyebrow">What a proof guarantees</p>
     <div class="tablet">
       <table class="table">
-        <thead><tr><th>Check</th><th>Who can run it</th><th>Guarantee</th></tr></thead>
+        <thead><tr><th>Property</th><th>Rests on</th></tr></thead>
         <tbody>
-          <tr><td>Binding</td><td>anyone, without the data</td><td>the answer is tied to the published commitment</td></tr>
-          <tr><td>Reproducible</td><td>the data holder</td><td>re-proving yields this answer, so it was not forged</td></tr>
-          <tr><td>Witness-free</td><td class="muted">not yet</td><td class="muted">a third party checks the proof itself, without the data</td></tr>
+          <tr><td>The answer is the true answer over the committed rows</td><td>the RISC Zero zkVM's soundness (audited by Hexens and Veridise)</td></tr>
+          <tr><td>The proof reveals nothing about the rows beyond the answer</td><td>RISC Zero's zero-knowledge receipts and the salted commitment</td></tr>
+          <tr><td>No answer singles out a few people</td><td>the cohort floor, enforced inside the proof</td></tr>
         </tbody>
       </table>
     </div>
-    <div class="notice warn gap"><b>Preview: not yet for real secrets.</b>Proofs run on Glass's research prover, over a 31-bit field with an unaudited hash, and they are not yet zero-knowledge. They demonstrate the guarantees above; they are not a vault. Tiresias moves to an audited, zero-knowledge proving system next, and this notice changes when it does.</div>
+    <p class="small muted gap">Tiresias's own guest program and integration have not yet had an independent audit. <a href="https://github.com/EgorKhaklin/tiresias/blob/main/SECURITY.md">SECURITY.md</a> says what is and is not covered.</p>
   </section>
 </main>
 
 <footer>
   <div class="wrap">
     <span>Tiresias, the seer of Thebes, answered truly without seeing.</span>
-    <span>Built on <a href="https://github.com/EgorKhaklin/Glass">Glass</a> · <a href="https://github.com/EgorKhaklin/tiresias">Source</a></span>
+    <span>Proved with <a href="https://github.com/risc0/risc0">RISC Zero</a> · <a href="https://github.com/EgorKhaklin/tiresias">Source</a></span>
   </div>
 </footer>
 </body>

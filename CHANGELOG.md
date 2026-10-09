@@ -1,6 +1,6 @@
 # Changelog
 
-Externally observable changes to Tiresias, research software on educational-grade cryptography.
+Externally observable changes to Tiresias, verifiable private analytics.
 The reasoning behind each change, with its tests, is in its commit message.
 Entries use the [Keep a Changelog](https://keepachangelog.com/) groups: Security, Fixed, Added, Changed, Removed.
 
@@ -8,18 +8,31 @@ Entries use the [Keep a Changelog](https://keepachangelog.com/) groups: Security
 
 ## Unreleased
 
+Proofs move from Glass's educational prover to the RISC Zero zkVM. Manifests and bundles from 1.0.0 do not verify under this release: commit the dataset again.
+
 ### Security
+
+- Every answer is now proved in the RISC Zero zkVM 3.0.6 (audited by Hexens and Veridise): a guest program recomputes the dataset's commitment, answers the query and enforces the cohort floor, and its succinct receipt is zero-knowledge. Before, proofs used a 31-bit field and an unaudited hash, were not zero-knowledge, and could be re-checked only by someone holding the data.
+- The commitment is SHA-256 over a fresh 32-byte salt, the schema and every cell, so it hides the rows; the salt, the commitment's opening, stays with the data.
 
 - The public shared-answer page wrote a bundle's query, the organization name and the dataset name into the page as HTML, and the registry stored any query a tenant uploaded. A tenant could publish a link whose page ran script on the registry's origin and read the API key the console kept in `localStorage`. Pages now build every node as text, every response carries a Content-Security-Policy that forbids inline script, the registry refuses queries that are not Tiresias SQL over the bundle's own columns and names with markup, and the console keeps the key for the tab only.
 
 ### Added
 
+- Verification without the data: `tiresias verify` checks a bundle's receipt with only the manifest, and the registry checks every receipt it stores and every shared answer it shows. A shared answer downloads as one file that `tiresias verify` accepts.
+- `tiresias-prover` (zkvm/), which proves and verifies; its guest is built reproducibly in RISC Zero's Docker image, pinned in the repository, and rebuilt byte for byte in CI. `tiresias prover` prints the image id it trusts.
 - `tiresias app`, the workbench, for the data holder's machine: commit a CSV with detected column types and a chosen minimum cohort, build questions without writing SQL (or write it), see each answer with its cohort and withheld groups, verify it, run a tamper test, and download the proof.
 
 ### Changed
 
+- Cells are 64-bit integers, negatives included; comparisons have no range limit, and a sum that does not fit in 64 bits is refused.
+- `GROUP BY` answers every group in one proof.
 - The registry's landing page, console and shared-answer page are redesigned in the house style (Cinzel capitals, the meander rule, the oracle-bronze accent, light and dark), on one design system shared with the workbench. The proofs' status is stated once, in plain words, where it applies.
 - The registry refuses a bundle whose query names a column its dataset does not have.
+
+### Removed
+
+- The Glass engine and its pin (`tiresias glass`, `TIRESIAS_GLASS_DIR`, `TIRESIAS_GLASS_UNPINNED`), the commitment point `gamma` (`TIRESIAS_GAMMA`), the `crypto_grade` and `accepted` fields, and the binding and reproducible verification tiers, which the receipt replaces.
 
 ## v1.0.0 - 2026-10-08 (development resumes under the Tiresias name)
 

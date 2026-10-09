@@ -1,0 +1,36 @@
+{
+  "dataset_id": "ds_0038b606cc65c7b5",
+  "name": "payroll",
+  "schema": [
+    {
+      "name": "dept",
+      "type": "category",
+      "categories": {
+        "eng": 0,
+        "sales": 1,
+        "ops": 2
+      }
+    },
+    {
+      "name": "level",
+      "type": "int",
+      "categories": {}
+    },
+    {
+      "name": "salary",
+      "type": "int",
+      "categories": {}
+    },
+    {
+      "name": "remote",
+      "type": "bool",
+      "categories": {}
+    }
+  ],
+  "commitment": "13fbb9c249dce089de13dd5834748f0ad5a597b1e14980e3f608cc6ec7709297",
+  "row_count": 8,
+  "created_at": 1791512205.769221,
+  "min_cohort": 3,
+  "engine_version": "tiresias-1.0.0 / risc0-zkvm-3.0.6",
+  "disclosure": "A salted SHA-256 commitment to the rows: it binds them and reveals nothing about them. Answers are proved against it in the RISC Zero zkVM."
+}

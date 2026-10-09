@@ -1,0 +1,15 @@
+[package]
+name = "tiresias-guest"
+version = "0.1.0"
+edition = "2021"
+# The Rust in RISC Zero's guest builder image; dependencies resolve to versions it builds.
+rust-version = "1.88"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+resolver = "3"
+
+[dependencies]
+risc0-zkvm = { version = "=3.0.6", default-features = false, features = ["std"] }
+tiresias-core = { path = "../../core" }

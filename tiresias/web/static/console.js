@@ -70,10 +70,10 @@
     return h("div", { class: "stack" }, ...list.map((b) => {
       const panel = h("div");
       const verify = h("button", { class: "btn small", type: "button", onclick: async () => {
-        verify.disabled = true; panel.replaceChildren(h("p", { class: "muted small", text: "Checking the binding…" }));
+        verify.disabled = true; panel.replaceChildren(h("p", { class: "muted small", text: "Verifying the receipt…" }));
         try {
           const v = (await api("/api/bundles/" + encodeURIComponent(b.bundle_id) + "/verify", "POST")).verification;
-          panel.replaceChildren(h("div", { class: "row gap" }, v.ok ? seal("ok", "Binding holds") : seal("bad", "Not bound"), h("span", { class: "muted small", text: "checked just now, without the data" })), checks(v));
+          panel.replaceChildren(h("div", { class: "row gap" }, v.ok ? seal("ok", "Verified") : seal("bad", "Does not verify"), h("span", { class: "muted small", text: "checked just now, without the data" })), checks(v));
         } catch (e) { panel.replaceChildren(notice("bad", "Verification could not run.", e.message)); }
         finally { verify.disabled = false; }
       } }, "Verify");
@@ -82,7 +82,7 @@
         try {
           const r = await api("/api/bundles/" + encodeURIComponent(b.bundle_id) + "/share", "POST");
           const url = location.origin + r.view_path;
-          panel.replaceChildren(h("div", { class: "gap" }, h("p", { class: "small muted", text: "Anyone with this link can see the answer and check its binding. It shows no rows." }),
+          panel.replaceChildren(h("div", { class: "gap" }, h("p", { class: "small muted", text: "Anyone with this link can see the answer, its checks, and download the proof to verify it themselves. It shows no rows." }),
             h("div", { class: "share" }, h("input", { type: "text", readonly: true, value: url, "aria-label": "Share link", onfocus: (e) => e.target.select() }),
               h("button", { class: "btn small", type: "button", onclick: async () => { try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch { toast("Copy failed"); } } }, "Copy"),
               h("a", { class: "btn small", href: url, target: "_blank", rel: "noopener" }, "Open"))));
@@ -92,7 +92,7 @@
       } }, "Share");
       return h("div", { class: "tablet" },
         h("div", { class: "row" }, h("span", { class: "mono small", text: b.query }), h("span", { class: "spacer" }),
-          b.accepted ? seal(b._verified ? "ok" : "warn", b._verified ? "Proved and bound" : "Proved, binding not checked") : seal("bad", "Proof rejected")),
+          b._verified ? seal("ok", "Verified") : seal("bad", "Does not verify")),
         h("div", { class: "row gap" },
           h("div", {}, h("div", { class: "answer-inline", text: answer(b.result) }),
             h("div", { class: "small muted", text: (names[b.dataset_id] || b.dataset_id) + (b.created_at ? " · " + when(b.created_at) : "") })),

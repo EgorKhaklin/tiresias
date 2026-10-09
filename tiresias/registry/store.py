@@ -174,7 +174,7 @@ class Store:
                     org_id,
                     bundle["dataset_id"],
                     bundle.get("query"),
-                    1 if bundle.get("accepted") else 0,
+                    1 if verified else 0,
                     str(bundle["commitment"]),
                     1 if verified else 0,
                     tier,
@@ -208,6 +208,7 @@ class Store:
         out = []
         for r in rows:
             b = json.loads(r["json"])
+            b.pop("receipt", None)  # a listing shows answers; the receipt is fetched one by one
             b["_verified"] = bool(r["verified"])
             b["_verify_tier"] = r["verify_tier"]
             out.append(b)

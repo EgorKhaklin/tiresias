@@ -4,7 +4,8 @@
 
 It runs where the data lives. A CSV is read in this process and never leaves it; what
 the workbench produces is a commitment (the manifest) and proofs (bundles), which are
-what travels. It binds to 127.0.0.1 by default.
+what travels. Proofs are RISC Zero receipts, made on this machine by tiresias-prover.
+It binds to 127.0.0.1 by default.
 
 The page is static (index.html and static/), served under a strict Content-Security-
 Policy: no inline script or style, nothing loaded from another origin. The JSON API:
@@ -14,9 +15,9 @@ Policy: no inline script or style, nothing loaded from another origin. The JSON 
     POST /api/inspect           a CSV's columns, guessed types and a preview
     POST /api/commit            commit a CSV: returns the manifest
     POST /api/query             prove an answer: returns the bundle
-    POST /api/verify            verify a bundle, without or with the data
+    POST /api/verify            verify a bundle's receipt, without the data
     POST /api/tamper            forge a bundle's answer and verify the forgery
-    GET  /api/bundles/<id>.json download a bundle
+    GET  /api/bundles/<id>.json download a bundle, receipt included
 """
 
 from __future__ import annotations
@@ -32,24 +33,18 @@ from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
+from tiresias.engine import zkvm
 from tiresias.engine.bundle import ProofBundle
 from tiresias.engine.commit import Manifest, commit_dataset
 from tiresias.engine.prover import prove
-from tiresias.engine.schema import (
-    CohortTooSmall,
-    ColType,
-    Column,
-    Dataset,
-    TiresiasFieldError,
-    TiresiasRangeError,
-)
+from tiresias.engine.schema import ColType, Column, Dataset
 from tiresias.engine.verify import verify_bundle
 from tiresias.query import sql
+from tiresias.query.spec import CohortTooSmall, Overflow
 
 HERE = os.path.dirname(__file__)
 STATIC = os.path.join(HERE, "static")
 SAMPLE_CSV = os.path.join(HERE, "..", "..", "examples", "payroll.csv")
-GAMMA = 918273645
 MAX_BODY = 20 * 1024 * 1024  # a CSV upload, as JSON
 PREVIEW_ROWS = 8
 CATEGORY_LIMIT = 64  # more distinct labels than this is probably not a category
@@ -74,7 +69,7 @@ _BOOL_FALSE = {"false", "no", "0"}
 
 
 class Refused(ValueError):
-    """A principled refusal (too few rows, a value out of range), not a mistake."""
+    """A principled refusal (too few rows, a sum past 64 bits), not a mistake."""
 
 
 def _read_csv(text: str) -> tuple[list[str], list[dict[str, str]]]:
@@ -102,10 +97,10 @@ def _guess(values: list[str]) -> tuple[str, str]:
     low = {v.lower() for v in values}
     if low <= (_BOOL_TRUE | _BOOL_FALSE) and len(low) <= 2 and not low <= {"0", "1"}:
         return "bool", "yes/no values"
-    if all(re.fullmatch(r"\d+", v) for v in values):
+    if all(re.fullmatch(r"-?\d+", v) for v in values):
         if low <= {"0", "1"}:
             return "bool", "only 0 and 1"
-        return "int", "whole numbers, 0 or more"
+        return "int", "whole numbers"
     distinct = len(low)
     if distinct <= CATEGORY_LIMIT:
         return "category", f"{distinct} distinct labels"
@@ -127,7 +122,7 @@ def _dataset(headers: list[str], rows: list[dict[str, str]], types: dict[str, st
 def api_state(_body: dict) -> dict:
     return {
         "datasets": [asdict(m) for m, _ in _datasets.values()],
-        "bundles": [asdict(b) for b in _bundles.values()],
+        "bundles": [b.public() for b in _bundles.values()],
     }
 
 
@@ -163,7 +158,7 @@ def api_commit(body: dict) -> dict:
         raise ValueError(f"the minimum cohort ({min_cohort}) is larger than the dataset ({len(rows)} rows)")
     name = re.sub(r"\s+", " ", str(body.get("name") or "dataset")).strip()[:80] or "dataset"
     ds = _dataset(headers, rows, types)
-    manifest = commit_dataset(ds, name=name, gamma=GAMMA, min_cohort=min_cohort)
+    manifest = commit_dataset(ds, name=name, min_cohort=min_cohort)
     _datasets[manifest.dataset_id] = (manifest, ds)
     return {"manifest": asdict(manifest)}
 
@@ -185,10 +180,10 @@ def api_query(body: dict) -> dict:
     try:
         spec = sql.parse(str(body.get("sql", "")), manifest)
         bundle = prove(ds, spec, manifest)
-    except (CohortTooSmall, TiresiasRangeError, TiresiasFieldError) as e:
+    except (CohortTooSmall, Overflow, zkvm.Refused) as e:
         raise Refused(str(e)) from None
     _bundles[bundle.bundle_id] = bundle
-    return {"bundle": asdict(bundle)}
+    return {"bundle": bundle.public(), "receipt_bytes": len(bundle.receipt) * 3 // 4}
 
 
 def _verify_payload(result) -> dict:
@@ -202,26 +197,26 @@ def _verify_payload(result) -> dict:
 
 def api_verify(body: dict) -> dict:
     bundle = _bundle(str(body.get("bundle_id", "")))
-    manifest, ds = _session(bundle.dataset_id)
-    return {"result": _verify_payload(verify_bundle(bundle, manifest, ds if body.get("with_data") else None))}
+    manifest, _ = _session(bundle.dataset_id)
+    return {"result": _verify_payload(verify_bundle(bundle, manifest))}
 
 
 def api_tamper(body: dict) -> dict:
     bundle = _bundle(str(body.get("bundle_id", "")))
-    manifest, ds = _session(bundle.dataset_id)
+    manifest, _ = _session(bundle.dataset_id)
     forged = copy.deepcopy(bundle)
     if "groups" in forged.result:
         key = next(iter(forged.result["groups"]))
         original = forged.result["groups"][key]
         forged.result["groups"][key] = original + 50000
     else:
-        key = "value" if "value" in forged.result else "sum"
+        key = "value" if "value" in forged.result else "avg"
         original = forged.result[key]
         forged.result[key] = original + 50000
     return {
         "original": original,
         "forged": original + 50000,
-        "result": _verify_payload(verify_bundle(forged, manifest, ds)),
+        "result": _verify_payload(verify_bundle(forged, manifest)),
     }
 
 
@@ -325,6 +320,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(host: str = "127.0.0.1", port: int = 8765) -> None:
+    try:
+        print(f"prover: {zkvm.binary()}")
+    except zkvm.ProverUnavailable as e:
+        print(f"warning: {e} Committing works; proving does not.")
     print(f"Tiresias workbench: http://{host}:{port}")
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 

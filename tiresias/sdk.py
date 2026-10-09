@@ -16,8 +16,8 @@ Example:
                                   {"dept": ColType.CATEGORY, "remote": ColType.BOOL},
                                   name="acme-payroll")
     bundle = eng.query(ds, "SELECT SUM(salary) WHERE dept = 'eng'", manifest)
-    print(bundle.result, bundle.accepted)
-    assert eng.verify(bundle, manifest, ds).ok
+    print(bundle.result)
+    assert eng.verify(bundle, manifest).ok
 """
 
 from __future__ import annotations
@@ -38,9 +38,6 @@ __all__ = ["LocalEngine", "Tiresias", "ColType", "Manifest", "ProofBundle"]
 class LocalEngine:
     """Commit, prove, and verify entirely on one machine (no registry)."""
 
-    def __init__(self, gamma: int = config.GAMMA):
-        self.gamma = gamma
-
     def commit_csv(
         self,
         path: str,
@@ -49,15 +46,13 @@ class LocalEngine:
         min_cohort: int = DEFAULT_MIN_COHORT,
     ) -> tuple[Dataset, Manifest]:
         ds = Dataset.from_csv(path, types)
-        return ds, commit_dataset(ds, name=name, gamma=self.gamma, min_cohort=min_cohort)
+        return ds, commit_dataset(ds, name=name, min_cohort=min_cohort)
 
     def query(self, dataset: Dataset, sql_text: str, manifest: Manifest) -> ProofBundle:
         return _prove(dataset, sql.parse(sql_text, manifest), manifest)
 
-    def verify(
-        self, bundle: ProofBundle, manifest: Manifest, dataset: Dataset | None = None
-    ) -> VerifyResult:
-        return verify_bundle(bundle, manifest, dataset)
+    def verify(self, bundle: ProofBundle, manifest: Manifest) -> VerifyResult:
+        return verify_bundle(bundle, manifest)
 
 
 class Tiresias:
@@ -68,12 +63,10 @@ class Tiresias:
         self,
         registry_url: str | None = None,
         api_key: str | None = None,
-        gamma: int = config.GAMMA,
     ):
         self.client = RegistryClient(
             registry_url or config.REGISTRY_URL, api_key or config.API_KEY
         )
-        self.gamma = gamma
 
     def whoami(self) -> dict:
         return self.client.whoami()
@@ -81,8 +74,8 @@ class Tiresias:
     def commit_csv(
         self, path: str, types: dict[str, ColType], name: str = "dataset"
     ) -> Manifest:
-        """Commit a CSV locally and register only its manifest."""
-        return commit_and_register(path, types, name, self.gamma, self.client)
+        """Commit a CSV locally, keep its opening locally, register only its manifest."""
+        return commit_and_register(path, types, name, self.client)
 
     def query(self, dataset_id: str, sql_text: str, data_path: str):
         """Prove a query locally and upload only the bundle.

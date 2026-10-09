@@ -21,7 +21,7 @@
         h("div", { class: "q mono", text: b.query }),
         big, groups,
         cohort !== undefined && cohort !== null ? h("div", { class: "c", text: "over " + NUM.format(cohort) + " rows" }) : null,
-        h("div", { class: "row gap seal-row" }, v.ok ? seal("ok", "Bound to the published commitment") : seal("bad", "Not bound to a published commitment"))),
+        h("div", { class: "row gap seal-row" }, v.ok ? seal("ok", "Proved over the published commitment") : seal("bad", "Does not verify against the published commitment"))),
       h("div", { class: "tablet gap" },
         h("h2", { text: "Who attests to it" }),
         h("dl", { class: "kv gap" },
@@ -31,10 +31,13 @@
           b.created_at ? h("dt", { text: "Proved" }) : null, b.created_at ? h("dd", { text: when(b.created_at) }) : null)),
       h("div", { class: "tablet gap" },
         h("h2", { text: "The checks, run just now" }),
-        h("p", { class: "muted small", text: "The registry checked this answer against the commitment the organization published, without the data." }),
-        checks(v)),
+        h("p", { class: "muted small", text: "The registry verified this answer's RISC Zero receipt against the commitment the organization published, without the data." }),
+        checks(v),
+        h("p", { class: "muted small" }, "Check it yourself: ",
+          h("a", { href: "/share/" + encodeURIComponent(token), download: "tiresias-proof.json", text: "download the proof and manifest" }),
+          ", then run tiresias verify.")),
       h("div", { class: "notice gap" }, h("b", { text: "What this does and does not show." }),
-        "The answer is bound to a dataset the organization committed to: it cannot be swapped without breaking the commitment, and it describes at least the dataset's minimum number of rows. Re-running the proof itself needs the data, so only the organization can. Tiresias is in preview: its proofs are not yet zero-knowledge or audited."));
+        "The receipt proves this is the true answer over the rows the organization committed to, and that it describes at least the dataset's minimum number of rows. It reveals nothing else about them. Proofs come from the RISC Zero zkVM; Tiresias's own guest program has not yet had an independent audit."));
   }
 
   (async () => {

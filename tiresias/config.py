@@ -15,10 +15,6 @@ from dataclasses import dataclass
 
 PREFIX = "TIRESIAS_"
 
-# The commitment field, 2^31 - 1 (tiresias/engine/schema.py FIELD_PRIME; a test
-# keeps the two equal without importing the engine here).
-_FIELD_PRIME = 2147483647
-
 _LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 ADMIN_TOKEN_MIN = 32
 
@@ -52,15 +48,12 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("MAX_PAGE_SIZE", "500", "int", "Largest page size a client may ask for; at least PAGE_SIZE.", "registry",
             1, 10000),
     Setting("LOG_LEVEL", "INFO", "level", "One of DEBUG, INFO, WARNING, ERROR, CRITICAL.", "registry"),
-    Setting("GLASS_DIR", "", "path",
-            "A Glass checkout to prove with. Empty means the pinned release, fetched to ~/.tiresias/glass/<tag> "
-            "on first use. Either way it must match the pinned files.", "prover"),
-    Setting("GLASS_UNPINNED", "0", "int",
-            "1 lets the prover use a Glass checkout that differs from the pinned files (development only).",
-            "prover", 0, 1),
-    Setting("GAMMA", "918273645", "int",
-            "Public Fiat-Shamir point for dataset commitments. Keep it fixed for a dataset's lifetime.", "prover",
-            2, _FIELD_PRIME - 1),
+    Setting("PROVER", "", "path",
+            "The tiresias-prover binary, which proves and verifies. Empty means zkvm/target/release in this "
+            "checkout, then PATH. The registry needs it too, to verify receipts.", "prover"),
+    Setting("OPENINGS", "~/.tiresias/openings", "path",
+            "Where each dataset's opening (the salt of its commitment) is kept, readable only by you. "
+            "Without it, no answer over that dataset can be proved.", "prover"),
     Setting("REGISTRY_URL", "", "str", "Registry the client talks to. Empty means http://HOST:PORT.", "client"),
     Setting("API_KEY", "", "secret", "The client's API key.", "client"),
 )
@@ -147,11 +140,11 @@ def render_markdown() -> str:
 
 _VALUES, _ = load()
 
-GLASS_DIR = _VALUES["GLASS_DIR"]
+PROVER = _VALUES["PROVER"]
+OPENINGS = _VALUES["OPENINGS"]
 REGISTRY_HOST = _VALUES["HOST"]
 REGISTRY_PORT = _VALUES["PORT"]
 DB_PATH = _VALUES["DB"]
-GAMMA = _VALUES["GAMMA"]
 ADMIN_TOKEN = _VALUES["ADMIN_TOKEN"]
 MAX_BODY_BYTES = _VALUES["MAX_BODY_BYTES"]
 RATE_PER_MIN = _VALUES["RATE_PER_MIN"]

@@ -7,6 +7,9 @@ dist/
 *.db
 *.manifest.json
 *.bundle.json
+!tests/fixtures/*.json
+*.opening
+zkvm/target/
 .playwright-mcp/
 tiresias-*.png
 .venv/

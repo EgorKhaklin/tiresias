@@ -8,8 +8,8 @@ Grammar (case-insensitive keywords):
     factor := col ( = | != | < | > | <= | >= ) value
     value  := number | 'string'
 
-No parentheses, no joins: the honest subset Glass's Pane path proves today.
-Category and boolean literals are translated to field codes via the manifest.
+No parentheses, no joins. Category and boolean literals are translated to their
+codes through the manifest; integers are 64-bit.
 """
 
 from __future__ import annotations
@@ -17,17 +17,6 @@ from __future__ import annotations
 import re
 
 from tiresias.engine.commit import Manifest
-from tiresias.query.pane_ast import (
-    AndE,
-    Col,
-    EqE,
-    GtE,
-    LitI,
-    LtE,
-    NotE,
-    OrE,
-    PExpr,
-)
 from tiresias.query.spec import (
     AGG_AVG,
     AGG_COUNT,
@@ -35,6 +24,12 @@ from tiresias.query.spec import (
     AGG_MAX,
     AGG_MIN,
     AGG_SUM,
+    I64_MAX,
+    I64_MIN,
+    And,
+    Cmp,
+    Or,
+    Pred,
     QuerySpec,
 )
 
@@ -68,50 +63,39 @@ class SqlError(ValueError):
     pass
 
 
-def _value_to_code(manifest: Manifest, column: str, raw: str):
+def _value_to_code(manifest: Manifest, column: str, raw: str) -> int:
     raw = raw.strip()
     if (raw.startswith("'") and raw.endswith("'")) or (
         raw.startswith('"') and raw.endswith('"')
     ):
         return manifest.code_for(column, raw[1:-1])
-    return manifest.code_for(column, int(raw))
+    value = int(raw)
+    if not I64_MIN <= value <= I64_MAX:
+        raise SqlError(f"{value} does not fit in 64 bits")
+    return manifest.code_for(column, value)
 
 
-def _factor(manifest: Manifest, text: str) -> PExpr:
+def _factor(manifest: Manifest, text: str) -> Pred:
     m = _FACTOR.match(text)
     if not m:
         raise SqlError(f"cannot parse condition: {text!r}")
     col, op, val = m.group("col"), m.group("op"), m.group("val")
-    code = _value_to_code(manifest, col, val)
-    c, lit = Col(col), LitI(code)
-    if op == "=":
-        return EqE(c, lit)
-    if op == "!=":
-        return NotE(EqE(c, lit))
-    if op == "<":
-        return LtE(c, lit)
-    if op == ">":
-        return GtE(c, lit)
-    if op == "<=":
-        return NotE(GtE(c, lit))
-    if op == ">=":
-        return NotE(LtE(c, lit))
-    raise SqlError(f"unsupported operator {op!r}")
+    return Cmp(col, op, _value_to_code(manifest, col, val))
 
 
-def _orterm(manifest: Manifest, text: str) -> PExpr:
+def _orterm(manifest: Manifest, text: str) -> Pred:
     parts = re.split(r"\s+and\s+", text, flags=re.IGNORECASE)
     expr = _factor(manifest, parts[0])
     for p in parts[1:]:
-        expr = AndE(expr, _factor(manifest, p))
+        expr = And(expr, _factor(manifest, p))
     return expr
 
 
-def _condition(manifest: Manifest, text: str) -> PExpr:
+def _condition(manifest: Manifest, text: str) -> Pred:
     parts = re.split(r"\s+or\s+", text, flags=re.IGNORECASE)
     expr = _orterm(manifest, parts[0])
     for p in parts[1:]:
-        expr = OrE(expr, _orterm(manifest, p))
+        expr = Or(expr, _orterm(manifest, p))
     return expr
 
 

@@ -1,9 +1,10 @@
 """The Tiresias registry server.
 
 Multi-tenant, API-key authenticated, persistent. It accepts manifests and proof
-bundles, verifies each bundle's binding to its manifest (witness-free, Tier 1),
-and serves a console. It NEVER receives raw data and never runs the prover, so a
-compromised registry cannot leak rows it never had.
+bundles, verifies each bundle's RISC Zero receipt against its manifest (without
+the data), and serves a console. It NEVER receives raw data and never proves, so
+a compromised registry cannot leak rows it never had. It needs tiresias-prover,
+which it runs only to verify.
 
   python3.12 -m tiresias.registry.server     # http://127.0.0.1:8765
 """
@@ -20,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from tiresias import __version__, config
+from tiresias.engine import zkvm
 from tiresias.engine.bundle import ProofBundle
 from tiresias.engine.commit import Manifest
 from tiresias.engine.verify import verify_bundle
@@ -50,6 +52,8 @@ SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'"
 _LABEL = re.compile(r"^[^\x00-\x1f\x7f<>]{1,64}$")   # a category label or dataset name: no control characters, no markup
 _COLUMN = re.compile(r"^[A-Za-z_]\w{0,63}$")
 MAX_QUERY = 2000
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_BASE64 = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
 STORE = Store(config.DB_PATH)
 
 _BUNDLE_VERIFY = re.compile(r"^/api/bundles/([\w]+)/verify$")
@@ -66,8 +70,8 @@ _ADMIN_KEY_DEL = re.compile(r"^/api/admin/keys/([\w]+)$")
 # held to the same alphabet the routes accept, with a bounded length.
 _ID = re.compile(r"^\w{1,128}$")
 
-_REQUIRED_MANIFEST = {"dataset_id", "commitment", "gamma", "schema"}
-_REQUIRED_BUNDLE = {"bundle_id", "dataset_id", "commitment", "gamma", "query", "result"}
+_REQUIRED_MANIFEST = {"dataset_id", "commitment", "schema", "min_cohort"}
+_REQUIRED_BUNDLE = {"bundle_id", "dataset_id", "commitment", "query", "result", "receipt", "image_id"}
 
 
 class ApiError(Exception):
@@ -111,6 +115,11 @@ def _check_manifest(body: dict) -> None:
     name = body.get("name", "")
     if not isinstance(name, str) or (name and not _LABEL.match(name)):
         raise ApiError(400, "name must be 1 to 64 characters, without control characters or < >")
+    if not isinstance(body.get("commitment"), str) or not _HEX64.match(body["commitment"]):
+        raise ApiError(400, "commitment must be a SHA-256 digest in lowercase hex")
+    min_cohort = body.get("min_cohort")
+    if not isinstance(min_cohort, int) or isinstance(min_cohort, bool) or min_cohort < 1:
+        raise ApiError(400, "min_cohort must be a whole number of at least 1")
     schema = body.get("schema")
     if not isinstance(schema, list) or not schema:
         raise ApiError(400, "schema must be a non-empty list of columns")
@@ -143,6 +152,11 @@ def _check_bundle_query(body: dict, manifest: dict) -> None:
         raise ApiError(400, f"query names columns this dataset does not have: {unknown}")
     if not isinstance(body.get("result"), dict):
         raise ApiError(400, "result must be an object")
+    receipt = body.get("receipt")
+    if not isinstance(receipt, str) or not _BASE64.match(receipt):
+        raise ApiError(400, "receipt must be a RISC Zero receipt in base64")
+    if not isinstance(body.get("image_id"), str) or not _HEX64.match(body["image_id"]):
+        raise ApiError(400, "image_id must be a guest image id in lowercase hex")
 
 
 def _require_id(body: dict, field: str) -> str:
@@ -198,11 +212,11 @@ def _reconstruct(cls, data: dict):
     return cls(**kwargs)
 
 
-def _tier1(bundle_dict: dict, manifest_dict: dict) -> dict:
-    """Witness-free binding verification (the only kind the registry can do)."""
+def _verify(bundle_dict: dict, manifest_dict: dict) -> dict:
+    """Verify the bundle's receipt against its manifest, without the data."""
     bundle = _reconstruct(ProofBundle, bundle_dict)
     manifest = _reconstruct(Manifest, manifest_dict)
-    return _verify_payload(verify_bundle(bundle, manifest, dataset=None))
+    return _verify_payload(verify_bundle(bundle, manifest))
 
 
 def public_share_payload(token: str) -> dict:
@@ -218,16 +232,16 @@ def public_share_payload(token: str) -> dict:
         raise ApiError(404, "shared bundle no longer exists")
     manifest = STORE.get_manifest(share["org_id"], bundle["dataset_id"])
     verification = (
-        _tier1(bundle, manifest)
+        _verify(bundle, manifest)
         if manifest
-        else {"ok": False, "tier": "binding", "checks": [], "note": "manifest missing"}
+        else {"ok": False, "tier": "receipt", "checks": [], "note": "manifest missing"}
     )
-    pub = {k: bundle[k] for k in (
-        "bundle_id", "query", "result", "accepted", "commitment",
-        "crypto_grade", "created_at", "disclosure") if k in bundle}
+    # The whole bundle and manifest, so anyone can save them and verify independently.
+    pub = {k: v for k, v in bundle.items() if not k.startswith("_")}
     return {
         "org": STORE.org_name(share["org_id"]),
         "bundle": pub,
+        "manifest": manifest,
         "dataset": (
             {"dataset_id": manifest["dataset_id"], "name": manifest.get("name"),
              "commitment": manifest["commitment"]}
@@ -330,7 +344,7 @@ def handle(
         if not manifest:
             raise ApiError(400, "no manifest for this dataset_id; register it first")
         _check_bundle_query(body, manifest)
-        verification = _tier1(body, manifest)
+        verification = _verify(body, manifest)
         STORE.put_bundle(org_id, body, verification["ok"], verification["tier"])
         STORE.audit(org_id, "bundle.submit", f"{body['bundle_id']} ok={verification['ok']}")
         log.info("org=%s bundle %s verified=%s", org_id, body["bundle_id"], verification["ok"])
@@ -348,7 +362,7 @@ def handle(
         manifest = STORE.get_manifest(org_id, bundle["dataset_id"])
         if not manifest:
             raise ApiError(400, "manifest for this bundle is missing")
-        return 200, {"verification": _tier1(bundle, manifest)}
+        return 200, {"verification": _verify(bundle, manifest)}
 
     m = _BUNDLE_SHARE.match(path)
     if m and method == "POST":
@@ -517,6 +531,7 @@ def serve(host: str | None = None, port: int | None = None) -> None:
     port = port or config.REGISTRY_PORT
     log.info("registry listening on http://%s:%s (db=%s)", host, port, config.DB_PATH)
     log.info("this server never receives raw data, only manifests and proof bundles")
+    log.info("receipts are verified with %s", zkvm.binary())
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 

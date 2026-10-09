@@ -12,16 +12,38 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install (pure stdlib, no deps)
+
+      - name: RISC Zero 3.0.6 (r0vm, which proves)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsSL https://risczero.com/install | bash
+          ~/.risc0/bin/rzup install r0vm 3.0.6
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            zkvm/target
+          key: zkvm-${{ runner.os }}-${{ hashFiles('zkvm/Cargo.lock', 'zkvm/methods/guest/Cargo.lock', 'zkvm/rust-toolchain.toml') }}
+
+      - name: The guest's query logic
+        run: cargo test --manifest-path zkvm/Cargo.toml -p tiresias-core
+
+      - name: The pinned guest rebuilds byte for byte
+        # Builds the guest in RISC Zero's Docker image on this runner; any difference
+        # from the committed binary or its image id fails the build.
+        run: |
+          zkvm/pin-guest.sh
+          git diff --exit-code zkvm/pinned
+
+      - name: Install
         run: pip install -e .
+
       - name: Unit tests
-        # The engine roundtrip test self-skips when the Glass engine isn't
-        # present, so the fast suite runs cleanly in CI without it.
+        # Verifies the committed fixture's receipt, made on another machine, with this build.
         run: python -m unittest tests.test_unit -v
 
-      - name: Engine round trip against the pinned Glass
-        # Fetches the Glass release pinned in tiresias/engine/glass_pin.py, verifies
-        # every file Tiresias reads against its SHA-256, and proves a real query.
-        run: |
-          tiresias glass --fetch
-          python -m unittest tests.test_engine -v
+      - name: End-to-end proofs
+        run: python -m unittest tests.test_engine -v
